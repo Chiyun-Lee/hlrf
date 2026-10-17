@@ -1,6 +1,7 @@
 // Paper browser: a tiny hash router over the backend API.
 //   #/            library of saved papers
 //   #/papers/:id  one paper's header and the reader (reader.js)
+//   #/for-you     the latest arXiv listing ranked for you (foryou.js)
 //   #/me          My learning: what the app has learned about you, your questions and quizzes
 // To add a view: write a function that renders into `app` and add a route below.
 
@@ -30,12 +31,15 @@ const atLevel = (path) => `${path}?level=${level}`;
 const routes = [
   [/^#?\/?$/, library],
   [/^#\/papers\/(\d+)$/, paper],
+  [/^#\/for-you(?:\/(\d{4}-\d{2}-\d{2}))?$/, forYou],
   [/^#\/me$/, me],
 ];
 
 async function route() {
   const [re, view] = routes.find(([re]) => re.test(location.hash)) ?? [/$/, notFound];
   closeChat();
+  const tab = location.hash.startsWith("#/for-you") ? "for-you" : location.hash === "#/me" ? "me" : "library";
+  document.querySelectorAll(".tabs a").forEach((a) => a.toggleAttribute("aria-current", a.dataset.tab === tab));
   app.innerHTML = `<p class="muted">Loading…</p>`;
   try {
     await view(...location.hash.match(re).slice(1));
@@ -122,14 +126,17 @@ async function paper(id) {
   const quizButton = app.querySelector("#quiz");
   const hasAbstract = () => p.abstract_levels.includes(level); // abstracts are made per reading level
   const showButtons = () => {
-    abstractButton.textContent = hasAbstract() ? "Graphical abstract" : "Done? Make graphical abstract";
+    abstractButton.textContent = hasAbstract() ? "Graphical abstract & cards" : "Done? Make graphical abstract & cards";
     quizButton.hidden = !hasAbstract();
   };
   showButtons();
   abstractButton.addEventListener("click", () =>
     showAbstract(id, p.title, {
       make: !hasAbstract(),
-      onReady: () => (hasAbstract() || p.abstract_levels.push(level), showButtons()),
+      hasCards: p.card_levels.includes(level),
+      onReady: () => (
+        hasAbstract() || p.abstract_levels.push(level), p.card_levels.includes(level) || p.card_levels.push(level), showButtons()
+      ),
     }),
   );
   app.querySelector(".levels").addEventListener("click", (e) => {
@@ -219,9 +226,14 @@ async function deletePaper(id) {
   await api(`/papers/${id}`, { method: "DELETE" });
 }
 
+// Errors carry the backend's `detail` (a message, or {reason, message} from the feed routes) and the status.
 async function api(path, options) {
   const res = await fetch(path, options);
-  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail ?? `${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => null))?.detail;
+    const message = typeof detail === "string" ? detail : detail?.message;
+    throw Object.assign(new Error(message ?? `${res.status} ${res.statusText}`), { status: res.status, detail });
+  }
   return res.status === 204 ? null : res.json();
 }
 
