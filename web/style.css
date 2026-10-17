@@ -48,7 +48,7 @@ input[type="search"] { width: 100%; box-sizing: border-box; padding: 10px 12px; 
 /* Reader: doodle notes over the paper (see reader.js) */
 @font-face {
   font-family: "xkcd"; /* xkcd-script, CC BY-NC 3.0, https://github.com/ipython/xkcd-font */
-  src: url("https://cdn.jsdelivr.net/gh/ipython/xkcd-font@master/xkcd-script/font/xkcd-script.woff") format("woff");
+  src: url("https://cdn.jsdelivr.net/gh/ipython/xkcd-font@d6a83979937c7c36475926009c1eb471e6d62b9d/xkcd-script/font/xkcd-script.woff") format("woff"); /* a fixed commit, so it's cached for good */
   font-display: swap;
 }
 :root { --ink: #1f2f7a; --wash: rgba(255, 255, 255, 0.82); }

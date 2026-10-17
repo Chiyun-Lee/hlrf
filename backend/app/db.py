@@ -65,6 +65,14 @@ def sources() -> list[tuple[int, str, str | None]]:
         return conn.execute("SELECT id, url, json_extract(data, '$.arxiv_id') FROM papers ORDER BY id").fetchall()
 
 
+def listing() -> list[tuple]:
+    """(id, title, authors as JSON, year, venue, url, page count) per saved paper, newest first: what the library lists,
+    read by SQLite rather than by loading every record with all its pages."""
+    fields = ", ".join(f"json_extract(data, '$.{f}')" for f in ("title", "authors", "year", "venue", "url"))
+    with lock:
+        return conn.execute(f"SELECT id, {fields}, json_array_length(data, '$.pages') FROM papers ORDER BY id DESC").fetchall()
+
+
 def delete(paper_id: int) -> bool:
     with lock, conn:
         cur = conn.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
