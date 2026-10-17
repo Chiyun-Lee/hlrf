@@ -161,6 +161,56 @@ class TutorReply(BaseModel):
     bullets: list[str] = []  # the note's complete new bullet list, when update_note
 
 
+class InkStroke(BaseModel):
+    """A pen or highlighter stroke the reader drew on a PDF page, in PDF points from the page's top-left."""
+
+    id: str
+    page: int  # 0-indexed
+    tool: Literal["pen", "highlighter"] = "pen"
+    color: str = "#1f2f7a"
+    width: float = 2  # PDF points
+    points: list[list[float]]  # [x, y, pressure]
+
+
+class InkText(BaseModel):
+    """A text box the reader typed on a PDF page; x, y (top-left) and w (the widest it wraps at) in PDF points."""
+
+    id: str
+    page: int
+    x: float
+    y: float
+    w: float
+    text: str
+    color: str = "#1f2f7a"
+
+
+class InkCard(BaseModel):
+    """An answer to the reader's handwriting, pinned on the page next to it (web/ink.js places it)."""
+
+    id: str
+    page: int
+    x: float  # top-left corner and width, in PDF points
+    y: float
+    w: float
+    read: list[str] = []  # what Claude read in the handwriting, one entry per piece
+    answer: str = ""  # Markdown with $…$ / $$…$$ maths
+    collapsed: bool = False
+    created: str = ""  # ISO time; strokes drawn after the last card are the newest question
+
+
+class Ink(BaseModel):
+    """Everything the reader drew and typed on one paper, and the answer cards on it."""
+
+    strokes: list[InkStroke] = []
+    texts: list[InkText] = []
+    cards: list[InkCard] = []
+
+
+class InkAnswer(BaseModel):
+    read: list[str]  # each piece of handwriting (and typed note) on screen, transcribed (LaTeX for maths), with what it points at
+    answer: str  # the card's text: Markdown, $…$ for inline maths and $$…$$ for display maths
+
+
 class FlowStep(BaseModel):
     kind: Literal["question", "approach", "finding", "meaning"]
     text: str  # a few words; it sits in a small box

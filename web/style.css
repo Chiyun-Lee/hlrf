@@ -720,3 +720,52 @@ body.chat-open .review-panel { max-width: calc(100vw - 412px); }
 .add-hint { margin-top: 6px; }
 .add-status { margin-top: 6px; color: var(--ink); min-height: 1em; }
 .btn[aria-pressed="true"]#mine { background: #e8f6dc; border-color: #58a700; }
+
+/* Writing on the paper and asking about it (ink.js). The ink sits above the notes and pins but lets every click
+   through until ✎ Write is on; answer cards sit above the ink. */
+.ink { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 6; pointer-events: none; overflow: visible; }
+.writing .ink { pointer-events: auto; touch-action: none; cursor: crosshair; }
+.ink .highlighter { fill-opacity: 0.4; mix-blend-mode: multiply; }
+.writing.tool-text .ink { cursor: text; }
+.writing.tool-lasso .ink { cursor: default; }
+.ink .lasso { fill: rgba(31, 47, 122, 0.05); stroke: var(--ink); stroke-width: 1.2; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+/* Text boxes: the handwriting font at 13 PDF points, so they scale with the page. Clickable only with the text tool. */
+.ink-text { position: absolute; z-index: 7; box-sizing: border-box; width: max-content; min-width: 1em; padding: 1px 3px; border-radius: 3px;
+  font: calc(var(--scale-factor, 1) * 13px) / 1.25 var(--hand); white-space: pre-wrap; overflow-wrap: anywhere; pointer-events: none; outline: none; }
+.writing.tool-text .ink-text { pointer-events: auto; cursor: text; box-shadow: 0 0 0 1px rgba(31, 47, 122, 0.25); }
+.ink-text[contenteditable="true"] { pointer-events: auto; min-width: 6em; background: rgba(255, 255, 255, 0.9); box-shadow: 0 0 0 1.5px var(--ink); }
+.ink-selection { position: absolute; z-index: 8; box-sizing: border-box; border: 1.5px dashed var(--ink); border-radius: 4px;
+  background: rgba(31, 47, 122, 0.04); cursor: move; touch-action: none; }
+.ink-selection button { position: absolute; top: -11px; right: -11px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%;
+  background: var(--ink); color: #fff; font-size: 15px; line-height: 22px; cursor: pointer; }
+.ink-bar { position: fixed; z-index: 40; left: 16px; bottom: 16px; display: flex; align-items: center; gap: 4px; padding: 4px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 999px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12); }
+.ink-bar button { display: inline-flex; align-items: center; font: 15px var(--hand); color: var(--ink); background: none; border: 0; border-radius: 999px; padding: 6px 10px; cursor: pointer; }
+.ink-bar button:hover { background: var(--ink-soft); }
+.ink-bar button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+.ink-bar .ink-ask, .ink-bar .ink-ask:hover { background: var(--ink); color: #fff; }
+.ink-bar .ink-ask:hover { opacity: 0.9; }
+.ink-tools { display: flex; align-items: center; gap: 2px; }
+.ink-tools[hidden] { display: none; }
+.ink-colors { display: flex; align-items: center; gap: 2px; margin: 0 2px; padding: 0 4px; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+.ink-tools .ink-color { padding: 6px; }
+.ink-tools i { display: block; width: 14px; height: 14px; border-radius: 50%; }
+.ink-tools i.hl { border-radius: 3px; opacity: 0.7; }
+.ink-tools .ink-color[aria-pressed="true"] { background: var(--ink-soft); box-shadow: inset 0 0 0 2px var(--ink); }
+.ink-card { position: absolute; z-index: 7; box-sizing: border-box; max-height: 60%; display: flex; flex-direction: column;
+  background: #fffdf3; border: 1.5px solid var(--ink); border-radius: 8px; box-shadow: 0 3px 12px rgba(31, 47, 122, 0.18);
+  font: 13px/1.45 var(--sans); color: var(--text); }
+.ink-card header { display: flex; align-items: center; gap: 4px; padding: 4px 6px 4px 10px; cursor: grab; touch-action: none;
+  border-bottom: 1px solid var(--border); font: 13px var(--hand); color: var(--ink); }
+.ink-card .ink-read { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ink-card header button { border: 0; background: none; color: var(--muted); font-size: 15px; line-height: 1; cursor: pointer; padding: 2px 4px; }
+.ink-card .ink-body { overflow: auto; padding: 6px 10px; }
+.ink-card .ink-body > :first-child { margin-top: 0; }
+.ink-card .ink-body > :last-child { margin-bottom: 0; }
+.ink-card .ink-body p, .ink-card .ink-body ul, .ink-card .ink-body ol { margin: 0.4em 0; }
+.ink-card .ink-body ul, .ink-card .ink-body ol { padding-left: 1.2em; }
+.ink-card .error { color: var(--danger); }
+.ink-card.collapsed { max-height: none; }
+.ink-card.collapsed .ink-body { display: none; }
+.ink-card.collapsed header { border-bottom: 0; }
+@media (max-width: 600px) { .ink-bar { left: 8px; bottom: 8px; } .ink-bar button { padding: 6px 7px; } }

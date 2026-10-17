@@ -17,9 +17,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import abstract as graphical
-from . import cards, db, extract, feed, llm, memory, pins, pitch, proof, quiz, review, revision, summarize, tutor
+from . import cards, db, extract, feed, ink, llm, memory, pins, pitch, proof, quiz, review, revision, summarize, tutor
 from .levels import DEFAULT, Level
-from .schemas import GraphicalAbstract, LearnerProfile, Note, PageSummary, Paper, PaperPins, Pitch, Proof, SummaryCards
+from .schemas import GraphicalAbstract, Ink, LearnerProfile, Note, PageSummary, Paper, PaperPins, Pitch, Proof, SummaryCards
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
@@ -398,6 +398,50 @@ def put_note(paper_id: int, page: int, index: int, note: Note, level: Level = DE
     summary.notes[index] = note
     db.save_summary(paper_id, page, level, summary)
     return note
+
+
+# --- Handwriting: write or draw on a paper and Ask about it (app/ink.py, web/ink.js) ---
+
+
+@app.get("/papers/{paper_id}/ink")
+def get_ink(paper_id: int) -> Ink:
+    get_paper_or_404(paper_id)
+    return db.get_ink(paper_id)
+
+
+@app.put("/papers/{paper_id}/ink")
+def put_ink(paper_id: int, body: Ink) -> Ink:
+    """The reader saves all their strokes and answer cards on a paper at once, shortly after each change."""
+    get_paper_or_404(paper_id)
+    db.save_ink(paper_id, body)
+    return body
+
+
+class InkAskRequest(BaseModel):
+    image: str  # base64 JPEG or PNG of the paper on screen, with the ink on it
+    media_type: Literal["image/jpeg", "image/png"] = "image/jpeg"
+    pages: list[int]  # the pages it shows, top to bottom
+    notes: list[str] = []  # the doodle notes on screen
+    typed: list[str] = []  # the reader's text boxes on screen, "[p. N] text"
+    card: str | None = None  # the card this answers (re-asking replaces it), so it isn't sent as an earlier answer
+
+
+@app.post("/papers/{paper_id}/ink/ask")
+def ask_ink(paper_id: int, req: InkAskRequest, level: Level = DEFAULT) -> dict:
+    """Read the handwriting on screen and answer it; the reader puts the answer in a card next to the writing."""
+    paper = get_paper_or_404(paper_id)
+    if not req.pages or not all(0 <= p < len(paper.pages) for p in req.pages):
+        raise HTTPException(422, "No such page")
+    earlier = [c for c in db.get_ink(paper_id).cards if c.id != req.card and c.answer]
+    with claude_errors(f"ink ask for paper {paper_id}"):
+        reply = ink.answer(paper, req.image, req.media_type, req.pages, req.notes, earlier, level, req.typed)
+    memory.record(
+        paper_id,
+        "question",
+        {"page": req.pages[0], "level": level, "selection": f"✎ handwriting on p. {req.pages[0] + 1}", "question": "; ".join(reply.read), "answer": reply.answer},
+        f'Reading "{paper.title}", they wrote on page {req.pages[0] + 1}: {"; ".join(reply.read) or "(nothing legible)"}\nAnswer: {reply.answer}',
+    )
+    return reply.model_dump()
 
 
 # --- For you: each day's arXiv papers ranked for you (app/feed.py) ---
