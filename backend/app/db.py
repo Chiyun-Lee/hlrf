@@ -1,4 +1,5 @@
-"""SQLite storage: one row per paper (the record as JSON, plus the PDF when we have it) and cached page summaries."""
+"""SQLite storage: one row per paper (the record as JSON, plus the PDF when we have it), cached page summaries, and
+For you's cached paper pitches and which library papers arxiv-feed has been told about."""
 
 import os
 import sqlite3
@@ -7,7 +8,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from .schemas import PageSummary, Paper
+from .schemas import PageSummary, Paper, Pitch
 
 DB_PATH = os.environ.get("PAPERS_DB", Path(__file__).parent.parent / "papers.db")  # override for tests/demos
 
@@ -17,6 +18,8 @@ conn.execute("CREATE TABLE IF NOT EXISTS papers (id INTEGER PRIMARY KEY, url TEX
 if "pdf" not in [col[1] for col in conn.execute("PRAGMA table_info(papers)")]:  # databases from before PDFs were kept
     conn.execute("ALTER TABLE papers ADD COLUMN pdf BLOB")
 conn.execute("CREATE TABLE IF NOT EXISTS summaries (paper_id INTEGER, page INTEGER, data TEXT, PRIMARY KEY (paper_id, page))")
+conn.execute("CREATE TABLE IF NOT EXISTS pitches (arxiv_id TEXT PRIMARY KEY, data TEXT)")
+conn.execute("CREATE TABLE IF NOT EXISTS feed_synced (arxiv_id TEXT PRIMARY KEY)")
 
 
 def save(paper: Paper, pdf: bytes | None = None) -> int:
@@ -51,6 +54,12 @@ def list_all() -> list[tuple[int, Paper]]:
     return [(pid, Paper.model_validate_json(data)) for pid, data in rows]
 
 
+def sources() -> list[tuple[int, str, str | None]]:
+    """(id, url, arxiv_id) per saved paper, without loading the full records."""
+    with lock:
+        return conn.execute("SELECT id, url, json_extract(data, '$.arxiv_id') FROM papers ORDER BY id").fetchall()
+
+
 def delete(paper_id: int) -> bool:
     with lock, conn:
         cur = conn.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
@@ -70,3 +79,33 @@ def get_summary(paper_id: int, page: int) -> PageSummary | None:
 def save_summary(paper_id: int, page: int, summary: PageSummary) -> None:
     with lock, conn:
         conn.execute("INSERT OR REPLACE INTO summaries VALUES (?, ?, ?)", (paper_id, page, summary.model_dump_json()))
+
+
+def get_pitches(arxiv_ids: list[str]) -> dict[str, Pitch]:
+    with lock:
+        rows = conn.execute(
+            f"SELECT data FROM pitches WHERE arxiv_id IN ({','.join('?' * len(arxiv_ids))})", arxiv_ids
+        ).fetchall()
+    pitches = []
+    for (data,) in rows:
+        try:
+            pitches.append(Pitch.model_validate_json(data))
+        except ValidationError:  # cached in an older format; regenerate
+            pass
+    return {p.id: p for p in pitches}
+
+
+def save_pitch(pitch: Pitch) -> None:
+    with lock, conn:
+        conn.execute("INSERT OR REPLACE INTO pitches VALUES (?, ?)", (pitch.id, pitch.model_dump_json()))
+
+
+def synced() -> set[str]:
+    """arXiv ids of library papers already marked relevant in arxiv-feed."""
+    with lock:
+        return {row[0] for row in conn.execute("SELECT arxiv_id FROM feed_synced")}
+
+
+def mark_synced(arxiv_id: str) -> None:
+    with lock, conn:
+        conn.execute("INSERT OR IGNORE INTO feed_synced VALUES (?)", (arxiv_id,))

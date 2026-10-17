@@ -4,12 +4,28 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Human Pretraining</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- STIX Two: the typeface of scientific journals, for paper titles and abstracts in For you -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,500;0,600;1,400&display=swap" />
     <link rel="stylesheet" href="style.css" />
+    <script>
+      // arXiv titles and abstracts carry inline LaTeX ($\Lambda$CDM). Views call MathJax.typesetPromise after rendering.
+      window.MathJax = { tex: { inlineMath: [["$", "$"], ["\\(", "\\)"]] } };
+    </script>
+    <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-chtml.js"></script>
   </head>
   <body>
-    <header class="topbar"><a href="#/">Human Pretraining</a></header>
+    <header class="topbar">
+      <a class="brand" href="#/">Human Pretraining</a>
+      <nav class="tabs">
+        <a href="#/" data-tab="library">Library</a>
+        <a href="#/for-you" data-tab="for-you">For you</a>
+      </nav>
+    </header>
     <main id="app"></main>
     <script src="reader.js"></script>
+    <script src="foryou.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

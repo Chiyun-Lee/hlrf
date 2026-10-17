@@ -62,3 +62,15 @@ class Note(BaseModel):
 
 class PageSummary(BaseModel):
     notes: list[Note]
+
+
+class Pitch(BaseModel):
+    """For you's summary of a new arXiv paper, for one reader (app/pitch.py)."""
+
+    id: str  # arXiv id
+    what: str  # what the paper does and finds
+    why: str  # why this reader should care, given their own work
+
+
+class Pitches(BaseModel):
+    pitches: list[Pitch]

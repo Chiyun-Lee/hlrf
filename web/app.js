@@ -1,6 +1,7 @@
 // Paper browser: a tiny hash router over the backend API.
 //   #/            library of saved papers
 //   #/papers/:id  one paper's header and the reader (reader.js)
+//   #/for-you     the latest arXiv listing ranked for you (foryou.js)
 // To add a view: write a function that renders into `app` and add a route below.
 
 const app = document.getElementById("app");
@@ -9,10 +10,13 @@ const MARKS = ["*", "†", "‡", "§", "¶"]; // equal-contribution groups, in 
 const routes = [
   [/^#?\/?$/, library],
   [/^#\/papers\/(\d+)$/, paper],
+  [/^#\/for-you(?:\/(\d{4}-\d{2}-\d{2}))?$/, forYou],
 ];
 
 async function route() {
   const [re, view] = routes.find(([re]) => re.test(location.hash)) ?? [/$/, notFound];
+  const tab = location.hash.startsWith("#/for-you") ? "for-you" : "library";
+  document.querySelectorAll(".tabs a").forEach((a) => a.toggleAttribute("aria-current", a.dataset.tab === tab));
   app.innerHTML = `<p class="muted">Loading…</p>`;
   try {
     await view(...location.hash.match(re).slice(1));
@@ -107,9 +111,14 @@ async function deletePaper(id) {
   await api(`/papers/${id}`, { method: "DELETE" });
 }
 
+// Errors carry the backend's `detail` (a message, or {reason, message} from the feed routes) and the status.
 async function api(path, options) {
   const res = await fetch(path, options);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => null))?.detail;
+    const message = typeof detail === "string" ? detail : detail?.message;
+    throw Object.assign(new Error(message ?? `${res.status} ${res.statusText}`), { status: res.status, detail });
+  }
   return res.status === 204 ? null : res.json();
 }
 
