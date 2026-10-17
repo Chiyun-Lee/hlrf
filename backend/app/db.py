@@ -7,7 +7,9 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from .schemas import GraphicalAbstract, PageSummary, Paper
+import json
+
+from .schemas import GraphicalAbstract, LearnerProfile, PageSummary, Paper
 
 DB_PATH = os.environ.get("PAPERS_DB", Path(__file__).parent.parent / "papers.db")  # override for tests/demos
 
@@ -18,6 +20,9 @@ if "pdf" not in [col[1] for col in conn.execute("PRAGMA table_info(papers)")]:  
     conn.execute("ALTER TABLE papers ADD COLUMN pdf BLOB")
 conn.execute("CREATE TABLE IF NOT EXISTS summaries (paper_id INTEGER, page INTEGER, data TEXT, PRIMARY KEY (paper_id, page))")
 conn.execute("CREATE TABLE IF NOT EXISTS abstracts (paper_id INTEGER PRIMARY KEY, data TEXT)")
+# Learning memory (app/memory.py): what the reader did, and the profile distilled from it. One reader per install.
+conn.execute("CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, paper_id INTEGER, kind TEXT, data TEXT, created TEXT DEFAULT CURRENT_TIMESTAMP)")
+conn.execute("CREATE TABLE IF NOT EXISTS profile (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT)")
 
 
 def save(paper: Paper, pdf: bytes | None = None) -> int:
@@ -83,3 +88,36 @@ def get_abstract(paper_id: int) -> GraphicalAbstract | None:
 def save_abstract(paper_id: int, abstract: GraphicalAbstract) -> None:
     with lock, conn:
         conn.execute("INSERT OR REPLACE INTO abstracts VALUES (?, ?)", (paper_id, abstract.model_dump_json()))
+
+
+def add_event(paper_id: int | None, kind: str, data: dict) -> None:
+    with lock, conn:
+        conn.execute("INSERT INTO events (paper_id, kind, data) VALUES (?, ?, ?)", (paper_id, kind, json.dumps(data)))
+
+
+def events(limit: int = 300) -> list[dict]:
+    """Most recent first, with the paper's title (None once the paper is deleted)."""
+    with lock:
+        rows = conn.execute(
+            "SELECT e.id, e.paper_id, p.title, e.kind, e.data, e.created FROM events e LEFT JOIN papers p ON p.id = e.paper_id"
+            " ORDER BY e.id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [{"id": i, "paper_id": pid, "paper": t, "kind": k, "data": json.loads(d), "created": c} for i, pid, t, k, d, c in rows]
+
+
+def get_profile() -> LearnerProfile:
+    with lock:
+        row = conn.execute("SELECT data FROM profile WHERE id = 1").fetchone()
+    return LearnerProfile.model_validate_json(row[0]) if row else LearnerProfile()
+
+
+def save_profile(profile: LearnerProfile) -> None:
+    with lock, conn:
+        conn.execute("INSERT OR REPLACE INTO profile VALUES (1, ?)", (profile.model_dump_json(),))
+
+
+def forget_everything() -> None:
+    with lock, conn:
+        conn.execute("DELETE FROM events")
+        conn.execute("DELETE FROM profile")

@@ -2,7 +2,7 @@
 
 import os
 
-from . import llm
+from . import llm, memory
 from .schemas import GraphicalAbstract, Note, PageSummary, Paper, Quiz
 from .summarize import parse_note_id
 
@@ -17,6 +17,7 @@ plain-language notes. Write 8 questions, in roughly the order of the paper, mixi
 Test understanding of the question, the approach, the findings and why they matter, not trivia (no author names,
 page numbers or exact decimals unless they are the point). Wrong options must be plausible. Keep it light and in the
 voice of the notes; prompts under ~25 words, options under ~8 words. `answer` is the index of the right option.
+If you're told what the reader struggles with, aim a couple of questions at those spots (gently).
 `explanation`: one friendly line saying why the answer is right. `proof`: the id of the note (e.g. "p3n1") whose
 content backs up the answer, so the reader can check it against the paper."""
 
@@ -29,7 +30,7 @@ def make(paper: Paper, summaries: list[PageSummary], abstract: GraphicalAbstract
         if n.kind != "aside"
     ]
     prompt = (
-        f"Paper: {paper.title}\n\nGraphical abstract:\n{abstract.model_dump_json(exclude={'figures': {'__all__': {'image'}}})}"
+        f"{memory.for_prompt()}\n\nPaper: {paper.title}\n\nGraphical abstract:\n{abstract.model_dump_json(exclude={'figures': {'__all__': {'image'}}})}"
         f"\n\nNotes:\n\n" + "\n\n".join(notes)
     )
     quiz = llm.ask(Quiz, SYSTEM, prompt, MODEL, EFFORT)

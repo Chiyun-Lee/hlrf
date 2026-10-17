@@ -1,6 +1,7 @@
 // Paper browser: a tiny hash router over the backend API.
 //   #/            library of saved papers
 //   #/papers/:id  one paper's header and the reader (reader.js)
+//   #/me          My learning: what the app has learned about you, your questions and quizzes
 // To add a view: write a function that renders into `app` and add a route below.
 
 const app = document.getElementById("app");
@@ -9,6 +10,7 @@ const MARKS = ["*", "†", "‡", "§", "¶"]; // equal-contribution groups, in 
 const routes = [
   [/^#?\/?$/, library],
   [/^#\/papers\/(\d+)$/, paper],
+  [/^#\/me$/, me],
 ];
 
 async function route() {
@@ -30,10 +32,10 @@ route();
 async function library() {
   const papers = await api("/papers");
   if (!papers.length) {
-    app.innerHTML = `<p class="muted">No papers yet. Open a paper in Chrome and click <b>Save this paper</b> in the extension.</p>`;
+    app.innerHTML = `<p class="empty">No papers yet!<br>Open one in Chrome and hit <b>Save this paper</b> in the extension.</p>`;
     return;
   }
-  app.innerHTML = `<input type="search" placeholder="Filter by title or author" id="q" /><div id="list"></div>`;
+  app.innerHTML = `<h1 class="hand">Your papers</h1><input type="search" placeholder="Filter by title or author" id="q" /><div id="list"></div>`;
   const list = app.querySelector("#list");
   const render = (q = "") => {
     q = q.toLowerCase();
@@ -43,7 +45,7 @@ async function library() {
         (p) => `<div class="paper-card">
           <a href="#/papers/${p.id}"><h2>${esc(p.title)}</h2></a>
           <div class="muted small">${esc(shortAuthors(p.authors))}${p.year ? ` · ${p.year}` : ""}${p.venue ? ` · ${esc(p.venue)}` : ""} · ${p.n_pages} pages</div>
-          <button class="delete" data-id="${p.id}">Delete</button>
+          <button class="btn quiet delete" data-id="${p.id}">Delete</button>
         </div>`,
       )
       .join("");
@@ -79,10 +81,10 @@ async function paper(id) {
         <a href="${esc(p.url)}" target="_blank">Original</a>
         ${p.doi ? `<a href="https://doi.org/${esc(p.doi)}" target="_blank">DOI ${esc(p.doi)}</a>` : ""}
         ${p.arxiv_id ? `<a href="https://arxiv.org/abs/${esc(p.arxiv_id)}" target="_blank">arXiv ${esc(p.arxiv_id)}</a>` : ""}
-        <button class="toggle-notes" id="toggle-notes">Show originals</button>
-        <button class="toggle-notes" id="abstract">${p.has_abstract ? "Graphical abstract" : "Done? Make graphical abstract"}</button>
-        <button class="toggle-notes quiz-button" id="quiz" ${p.has_abstract ? "" : "hidden"}>Quiz me ✦</button>
-        <button class="delete" id="delete">Delete</button>
+        <button class="btn" id="toggle-notes">Show originals</button>
+        <button class="btn" id="abstract">${p.has_abstract ? "Graphical abstract" : "Done? Make graphical abstract"}</button>
+        <button class="btn primary" id="quiz" ${p.has_abstract ? "" : "hidden"}>Quiz me ✦</button>
+        <button class="btn quiet" id="delete">Delete</button>
       </div>
     </section>
     <article class="doc" id="doc"></article>`;
@@ -107,6 +109,65 @@ async function paper(id) {
     location.hash = "#/";
   });
   await renderReader(doc, id, p);
+}
+
+const FACT_KINDS = {
+  background: "What you know",
+  struggle: "Tripped you up",
+  strength: "You've got this",
+  interest: "You're curious about",
+  preference: "How you like it explained",
+};
+
+async function me() {
+  const { profile, events } = await api("/me");
+  const questions = events.filter((e) => e.kind === "question");
+  const quizzes = events.filter((e) => e.kind === "quiz");
+  const byPaper = Object.groupBy(questions, (e) => e.paper ?? "(deleted paper)");
+  app.innerHTML = `
+    <h1 class="hand">My learning</h1>
+    <p class="muted">What the tutor has picked up from your questions and quizzes. It uses this to pitch notes, answers and
+      quizzes at you. Remove anything that's wrong, or add your own.</p>
+    <section class="facts">${Object.entries(FACT_KINDS)
+      .map(([kind, label]) => {
+        const facts = profile.facts.map((f, i) => ({ ...f, i })).filter((f) => f.kind === kind);
+        return `<div class="fact-group"><h3 class="hand">${label}</h3>${
+          facts.map((f) => `<div class="fact">${esc(f.text)}<button class="x" data-i="${f.i}" title="Forget this">×</button></div>`).join("") ||
+          `<div class="muted small">Nothing yet.</div>`
+        }</div>`;
+      })
+      .join("")}</section>
+    <form class="add-fact">
+      <select>${Object.entries(FACT_KINDS).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select>
+      <input placeholder="Tell the tutor something about you (e.g. I'm a chemist)" />
+      <button class="btn primary">Add</button>
+    </form>
+
+    <h2 class="hand">Your questions</h2>
+    ${Object.entries(byPaper)
+      .map(([title, qs]) => `<div class="history-paper"><h3>${qs[0].paper_id && qs[0].paper ? `<a href="#/papers/${qs[0].paper_id}">${esc(title)}</a>` : esc(title)}</h3>${qs
+        .map((e) => `<details class="history-q"><summary><q>${esc(e.data.selection.slice(0, 120))}</q> ${esc(e.data.question)}</summary><p>${esc(e.data.answer)}</p></details>`)
+        .join("")}</div>`)
+      .join("") || `<p class="muted">Highlight anything in a paper and click Ask to start.</p>`}
+
+    <h2 class="hand">Quizzes</h2>
+    ${quizzes.map((e) => `<div class="history-quiz"><b>${e.data.right_first_time}/${e.data.total}</b> first time · ${esc(e.paper ?? "(deleted paper)")} <span class="muted small">${esc(e.created.slice(0, 16))}</span>${e.data.missed.length ? `<div class="muted small">Missed: ${e.data.missed.map((m) => esc(m.prompt)).join(" · ")}</div>` : ""}</div>`).join("") || `<p class="muted">No quizzes yet: make a graphical abstract, then Quiz me.</p>`}
+
+    <p class="forget"><button class="btn" id="forget">Forget everything</button></p>`;
+
+  const save = async (facts) => (await api("/me/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ facts }) }), route());
+  app.querySelector(".facts").onclick = (e) => e.target.matches(".x") && save(profile.facts.filter((_, i) => i !== +e.target.dataset.i));
+  app.querySelector(".add-fact").onsubmit = (e) => {
+    e.preventDefault();
+    const text = e.target.querySelector("input").value.trim();
+    if (text) save([...profile.facts, { kind: e.target.querySelector("select").value, text }]);
+  };
+  const forget = app.querySelector("#forget");
+  forget.onclick = async () => {
+    if (forget.textContent !== "Really forget everything?") return (forget.textContent = "Really forget everything?");
+    await api("/me", { method: "DELETE" });
+    route();
+  };
 }
 
 function notFound() {

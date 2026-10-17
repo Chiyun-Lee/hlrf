@@ -2,7 +2,7 @@
 
 import os
 
-from . import llm
+from . import llm, memory
 from .extract import page_text
 from .schemas import Note, Paper, TutorReply
 
@@ -29,7 +29,7 @@ false; never change the note for trivia or for what it already says clearly. If 
 
 def answer(paper: Paper, page: int, note: Note | None, selection: str, messages: list[dict]) -> TutorReply:
     """`messages`: the chat so far, alternating user/assistant, ending with the reader's latest message."""
-    context = f"Paper: {paper.title}\nPage {page + 1} of {len(paper.pages)}. Its text:\n\n{page_text(paper.pages[page])}\n\n"
+    context = f"{memory.for_prompt()}\n\nPaper: {paper.title}\nPage {page + 1} of {len(paper.pages)}. Its text:\n\n{page_text(paper.pages[page])}\n\n"
     if note:
         context += f"The note over the passage ({note.kind}):\n{note.heading or ''}\n" + "\n".join(f"- {b}" for b in note.bullets)
     else:

@@ -121,7 +121,19 @@ function addNote(el, page, n, index, onPdf) {
     note.parts.push(part);
   }
   onPdf ? (place(note, main, page), el.append(note)) : main.append(note);
+  if (onPdf && n.marks?.length) note.parts.push(figureMarks(el, page, n.marks));
   fit(note);
+}
+
+// A figure note's doodles (marks.js), drawn over the page in an SVG that switches with the note.
+function figureMarks(el, page, marks) {
+  const ratio = page.height / page.width;
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "marks");
+  svg.setAttribute("viewBox", `0 0 1000 ${1000 * ratio}`);
+  drawMarks(svg, marks, (x, y) => [x, y * ratio], 19);
+  el.append(svg);
+  return svg;
 }
 
 // (Re)write a note's text, e.g. after the tutor in chat.js adds to it.

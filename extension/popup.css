@@ -1,0 +1,27 @@
+/* Same look as the app: tokens copied from web/style.css (keep in sync). */
+@font-face {
+  font-family: "xkcd"; /* xkcd-script, CC BY-NC 3.0, https://github.com/ipython/xkcd-font */
+  src: url("https://cdn.jsdelivr.net/gh/ipython/xkcd-font@master/xkcd-script/font/xkcd-script.woff") format("woff");
+}
+:root {
+  --paper: #fbfaf6;
+  --card: #fff;
+  --muted: #6b6b66;
+  --border: #e4e2da;
+  --ink: #1f2f7a;
+  --ink-soft: #e9ecf7;
+  --danger: #b0181c;
+  --hand: "xkcd", "Comic Sans MS", cursive;
+}
+body { width: 320px; margin: 0; padding: 14px 16px 16px; background: var(--paper); font-family: system-ui, -apple-system, sans-serif; color: #1d1d1b; }
+header { display: flex; justify-content: space-between; align-items: baseline; }
+.logo { font: 22px var(--hand); color: var(--ink); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 0.18em; }
+a { color: var(--ink); font: 15px var(--hand); text-decoration: none; }
+.tagline { margin: 8px 0 14px; color: var(--muted); font-size: 13px; }
+.btn { display: inline-block; font: 17px var(--hand); padding: 6px 14px; border: 1.5px solid var(--ink); border-radius: 10px; background: var(--card); color: var(--ink); cursor: pointer; text-decoration: none; }
+.btn.primary { background: var(--ink); color: #fff; }
+#save { width: 100%; }
+.status { margin-top: 12px; padding: 10px 12px; border-radius: 12px; border: 1.5px dashed var(--ink); background: var(--card); font: 16px/1.35 var(--hand); color: var(--ink); }
+.status.working { border-color: var(--border); color: var(--muted); }
+.status.error { border-color: var(--danger); color: var(--danger); }
+.status .btn { margin-top: 10px; display: block; text-align: center; }

@@ -82,7 +82,17 @@ function abstractSvg(a, paperTitle, fontCss = "") {
     const label = wrap(f.label, slotW - 24, 20).slice(0, 3);
     const imgH = slotH - 14 - label.length * 26;
     out.push(`<rect x="${left}" y="${top}" width="${slotW}" height="${slotH}" rx="12" fill="#fff" stroke="${INK}" stroke-width="1.5" stroke-dasharray="6 5"/>`);
-    out.push(`<image href="${f.image}" x="${left + 8}" y="${top + 8}" width="${slotW - 16}" height="${imgH - 8}" preserveAspectRatio="xMidYMid meet"/>`);
+    const [bx, by, bw, bh] = [left + 8, top + 8, slotW - 16, imgH - 8];
+    out.push(`<image href="${f.image}" x="${bx}" y="${by}" width="${bw}" height="${bh}" preserveAspectRatio="xMidYMid meet"/>`);
+    if (f.marks?.length) {
+      // Doodles sit on the image as drawn (scaled to fit, centred).
+      const s = Math.min(bw / f.width, bh / f.height);
+      const [dw, dh] = [f.width * s, f.height * s];
+      const [ox, oy] = [bx + (bw - dw) / 2, by + (bh - dh) / 2];
+      const g = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      drawMarks(g, f.marks, (x, y) => [ox + (x / 1000) * dw, oy + (y / 1000) * dh], 17);
+      out.push(g.innerHTML);
+    }
     out.push(svgText(left + 12, top + imgH + 22, label, 20, slotW - 24));
   });
   const bx = figs.length ? pad + figW + 50 : pad;
@@ -100,7 +110,8 @@ function abstractSvg(a, paperTitle, fontCss = "") {
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">
   <defs>
-    <style>${fontCss} text { font-family: xkcd, "Comic Sans MS", cursive; fill: ${INK}; }</style>
+    <style>${fontCss} text { font-family: xkcd, "Comic Sans MS", cursive; fill: ${INK}; }
+      .mark-text { stroke: #fff; paint-order: stroke; stroke-linejoin: round; }</style>
     <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="${INK}"/></marker>
   </defs>
   <rect width="${w}" height="${h}" fill="#fff"/>

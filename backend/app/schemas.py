@@ -53,6 +53,16 @@ class Paper(PaperHeader):
         return [{"blocks": [{"text": t} for t in p.split("\n\n") if t.strip()]} if isinstance(p, str) else p for p in pages]
 
 
+class Mark(BaseModel):
+    """A doodle on a figure: a circle around a feature, or an arrow to it, with a short handwritten note.
+    Coordinates are 0-1000 across the page's width and height (for abstract figures: across the cropped figure)."""
+
+    shape: Literal["circle", "arrow"]
+    box: list[float]  # [x0, y0, x1, y1] around the feature
+    text: str  # a few words
+    text_at: list[float]  # [x, y]: centre of the text, in empty space near the feature
+
+
 class Note(BaseModel):
     """One note laid over the blocks it covers, e.g. a section heading and all the paragraphs under it on this page."""
 
@@ -60,6 +70,7 @@ class Note(BaseModel):
     blocks: list[int]  # indices of the blocks covered
     heading: str | None = None  # short, playful title; a plain label for asides
     bullets: list[str] = []
+    marks: list[Mark] = []  # figure notes: doodles on the figure itself
 
 
 class PageSummary(BaseModel):
@@ -84,6 +95,7 @@ class AbstractFigure(BaseModel):
     image: str | None = None  # filled in by the backend: data: URI of the figure cropped from the PDF
     width: float | None = None
     height: float | None = None
+    marks: list[Mark] = []  # filled in by the backend: the figure note's doodles, in the crop's coordinates
 
 
 class GraphicalAbstract(BaseModel):
@@ -120,3 +132,14 @@ class Proof(BaseModel):
     paragraph: str  # the original paragraph holding the quote
     quote: str | None  # the key words, verbatim from `paragraph` (None if they couldn't be pinned down)
     note: Note  # the summarised version
+
+
+class Fact(BaseModel):
+    kind: Literal["background", "struggle", "strength", "interest", "preference"]
+    text: str  # short and concrete, e.g. "Shaky on what a protein backbone is"
+
+
+class LearnerProfile(BaseModel):
+    """What the app has learned about the reader (app/memory.py); they can see and edit it on the My learning page."""
+
+    facts: list[Fact] = []

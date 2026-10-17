@@ -1,52 +1,86 @@
-:root {
-  --bg: #fafaf8;
-  --card: #fff;
-  --text: #1d1d1b;
-  --muted: #6b6b66;
-  --border: #e4e3de;
-  --accent: #2f5bd3;
-  --warn: #b5590a;
-  font-family: system-ui, -apple-system, sans-serif;
-  color: var(--text);
-  background: var(--bg);
-}
-body { margin: 0; }
-a { color: var(--accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
-
-.topbar { padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--card); font-weight: 600; }
-.topbar a { color: var(--text); }
-main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
-
-.muted { color: var(--muted); }
-.small { font-size: 13px; }
-input[type="search"] { width: 100%; box-sizing: border-box; padding: 10px 12px; font: inherit; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
-
-/* Library */
-.paper-card { position: relative; padding: 16px 90px 16px 16px; margin-top: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
-.paper-card:hover { border-color: var(--accent); }
-.paper-card a { color: inherit; }
-.paper-card h2 { margin: 0 0 6px; font-size: 17px; }
-.paper-card .delete { position: absolute; top: 14px; right: 14px; }
-
-.delete { font: inherit; font-size: 13px; padding: 2px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--muted); cursor: pointer; }
-.delete:hover { border-color: #c0392b; color: #c0392b; }
-
-/* Paper */
-.paper-head h1 { margin: 0 0 10px; font-size: 26px; line-height: 1.25; }
-.authors { line-height: 1.7; }
-.authors sup { color: var(--accent); margin-left: 1px; }
-.links { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; align-items: center; }
-.links #toggle-notes { margin-left: auto; }
-.notes { margin-top: 12px; padding: 10px 12px; border-left: 3px solid var(--border); }
-
-/* Reader: doodle notes over the paper (see reader.js) */
+/* Human Pretraining's look, shared by the app, the doodles and the extension popup (extension/popup.css copies the
+   tokens): warm paper, navy ink, the xkcd handwriting for anything "written" (titles, notes, labels), a plain sans
+   for reading. */
 @font-face {
   font-family: "xkcd"; /* xkcd-script, CC BY-NC 3.0, https://github.com/ipython/xkcd-font */
   src: url("https://cdn.jsdelivr.net/gh/ipython/xkcd-font@master/xkcd-script/font/xkcd-script.woff") format("woff");
   font-display: swap;
 }
-:root { --ink: #1f2f7a; --wash: rgba(255, 255, 255, 0.82); }
+:root {
+  --paper: #fbfaf6;
+  --card: #fff;
+  --text: #1d1d1b;
+  --muted: #6b6b66;
+  --border: #e4e2da;
+  --ink: #1f2f7a;
+  --ink-soft: #e9ecf7;
+  --wash: rgba(255, 255, 255, 0.82);
+  --danger: #b0181c;
+  --hand: "xkcd", "Comic Sans MS", cursive;
+  --sans: system-ui, -apple-system, sans-serif;
+  font-family: var(--sans);
+  color: var(--text);
+  background: var(--paper);
+}
+body { margin: 0; }
+a { color: var(--ink); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 0.15em; }
+.hand { font-family: var(--hand); color: var(--ink); font-weight: normal; }
+h1.hand { font-size: 34px; margin: 8px 0 6px; text-decoration: underline; text-underline-offset: 0.15em; }
+h2.hand { font-size: 24px; margin: 34px 0 10px; }
+
+.topbar { display: flex; align-items: baseline; gap: 24px; padding: 12px 24px; border-bottom: 1px solid var(--border); background: var(--card); }
+.topbar .logo { font: 24px var(--hand); color: var(--ink); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 0.18em; }
+.topbar nav { display: flex; gap: 18px; font: 17px var(--hand); }
+main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+input[type="search"], .add-fact input, .add-fact select { box-sizing: border-box; padding: 10px 12px; font: inherit; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+input[type="search"] { width: 100%; }
+
+/* Buttons: ink outline; .primary filled; .quiet greyed (e.g. Delete) */
+.btn { font: 15px var(--hand); padding: 4px 12px; border: 1.5px solid var(--ink); border-radius: 10px; background: var(--card); color: var(--ink); cursor: pointer; }
+.btn:hover { background: var(--ink-soft); }
+.btn.primary { background: var(--ink); color: #fff; }
+.btn.primary:hover { background: #17236a; }
+.btn.quiet { border-color: var(--border); color: var(--muted); }
+.btn.quiet:hover { border-color: var(--danger); color: var(--danger); background: var(--card); }
+
+/* Library */
+.paper-card { position: relative; padding: 16px 100px 16px 18px; margin-top: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; }
+.paper-card:hover { border-color: var(--ink); box-shadow: 3px 3px 0 var(--ink-soft); }
+.paper-card a { color: inherit; }
+.paper-card h2 { margin: 0 0 6px; font-size: 17px; }
+.paper-card .btn { position: absolute; top: 14px; right: 14px; }
+.empty { font: 20px var(--hand); color: var(--ink); text-align: center; margin: 60px 0; }
+
+/* Paper */
+.paper-head h1 { margin: 0 0 10px; font-size: 26px; line-height: 1.25; }
+.authors { line-height: 1.7; }
+.authors sup { color: var(--ink); margin-left: 1px; }
+.links { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-top: 12px; align-items: center; }
+.links #toggle-notes { margin-left: auto; }
+.notes { margin-top: 12px; padding: 10px 12px; border-left: 3px solid var(--border); }
+
+/* My learning (app.js me()) */
+.facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin-top: 18px; }
+.fact-group { padding: 12px 14px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; }
+.fact-group h3 { margin: 0 0 8px; font-size: 18px; text-decoration: underline; text-underline-offset: 0.15em; }
+.fact { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; font: 16px var(--hand); color: var(--ink); }
+.fact .x { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 16px; }
+.fact .x:hover { color: var(--danger); }
+.add-fact { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.add-fact input { flex: 1; min-width: 220px; }
+.history-paper h3 { font-size: 16px; margin: 18px 0 6px; }
+.history-q { padding: 8px 12px; margin: 6px 0; background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+.history-q summary { cursor: pointer; }
+.history-q q { font-style: italic; color: var(--muted); margin-right: 6px; }
+.history-q p { margin: 8px 0 0; font: 16px/1.4 var(--hand); color: var(--ink); }
+.history-quiz { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.forget { margin-top: 40px; }
+
+/* Reader: doodle notes over the paper (see reader.js) */
 
 .doc { margin-top: 28px; display: flex; flex-direction: column; gap: 20px; }
 .page { position: relative; background: var(--card); border: 1px solid var(--border); border-radius: 4px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); }
@@ -54,12 +88,12 @@ input[type="search"] { width: 100%; box-sizing: border-box; padding: 10px 12px; 
 .text-page { padding: 28px 32px; font-size: 15px; line-height: 1.6; }
 .text-page .block { position: relative; }
 .text-page .block p { margin: 0 0 12px; }
-.page-status { position: absolute; top: 8px; right: 10px; font: 13px "xkcd", "Comic Sans MS", cursive; color: var(--ink); opacity: 0.7; }
+.page-status { position: absolute; top: 8px; right: 10px; font: 13px var(--hand); color: var(--ink); opacity: 0.7; }
 .page-status button { font: inherit; color: inherit; background: none; border: 1px solid currentColor; border-radius: 4px; cursor: pointer; }
 
 .note { position: absolute; inset: 0; box-sizing: border-box; padding: 0.4em 2.2em 0.4em 0.6em; overflow: hidden;
   background: var(--wash); backdrop-filter: blur(2.5px); -webkit-backdrop-filter: blur(2.5px); border-radius: 6px;
-  color: var(--ink); font-family: "xkcd", "Comic Sans MS", cursive; line-height: 1.2; transition: background 0.2s, backdrop-filter 0.2s; }
+  color: var(--ink); font-family: var(--hand); line-height: 1.2; transition: background 0.2s, backdrop-filter 0.2s; }
 .note-body ul { margin: 0; padding-left: 1em; }
 .note-body li { margin: 0.1em 0; }
 .note-heading { margin-bottom: 0.3em; text-transform: uppercase; text-decoration: underline; text-underline-offset: 0.15em; }
@@ -88,7 +122,7 @@ input[type="search"] { width: 100%; box-sizing: border-box; padding: 10px 12px; 
 .note.off .switch::after { left: 2px; }
 .switch:hover { opacity: 1; }
 
-.toggle-notes { font: inherit; font-size: 13px; padding: 2px 10px; border: 1px solid var(--ink); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; }
+
 
 /* pdf.js text layer (from pdf_viewer.css): invisible text over the canvas so the original can be selected */
 .textLayer { position: absolute; inset: 0; overflow: clip; line-height: 1; text-align: initial; transform-origin: 0 0; z-index: 0;
@@ -110,19 +144,19 @@ input[type="search"] { width: 100%; box-sizing: border-box; padding: 10px 12px; 
 .note.editing .note-heading:empty::before { content: "Title"; opacity: 0.4; }
 
 /* Highlight-to-ask (chat.js) */
-.ask-button { position: absolute; z-index: 50; font: 14px "xkcd", "Comic Sans MS", cursive; padding: 4px 12px; border: 0; border-radius: 999px;
+.ask-button { position: absolute; z-index: 50; font: 14px var(--hand); padding: 4px 12px; border: 0; border-radius: 999px;
   background: var(--ink); color: #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); cursor: pointer; }
 .chat { position: fixed; z-index: 60; top: 0; right: 0; bottom: 0; width: min(380px, 100%); display: flex; flex-direction: column;
   background: var(--card); border-left: 1px solid var(--border); box-shadow: -4px 0 16px rgba(0, 0, 0, 0.08); }
 .chat header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); }
 .chat .close { font-size: 20px; line-height: 1; border: 0; background: none; cursor: pointer; color: var(--muted); }
 .chat blockquote { margin: 12px 16px 4px; padding: 8px 10px; border-left: 3px solid var(--ink); background: #f3f4f8; font-size: 13px; max-height: 120px; overflow: auto; }
-.chat-about { margin: 0 16px; font: 13px "xkcd", "Comic Sans MS", cursive; color: var(--ink); }
+.chat-about { margin: 0 16px; font: 13px var(--hand); color: var(--ink); }
 .chat .messages { flex: 1; overflow: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
 .msg { max-width: 90%; padding: 8px 12px; border-radius: 12px; font-size: 14px; line-height: 1.45; white-space: pre-wrap; }
 .msg.user { align-self: flex-end; background: #eceef4; }
 .msg.ai { align-self: flex-start; background: #f7f7fb; border: 1px solid var(--border); color: var(--ink); }
-.msg.system { align-self: center; font: 13px "xkcd", "Comic Sans MS", cursive; color: var(--ink); }
+.msg.system { align-self: center; font: 13px var(--hand); color: var(--ink); }
 .msg.system button { font: inherit; color: inherit; background: none; border: 1px solid currentColor; border-radius: 4px; cursor: pointer; margin-left: 6px; }
 .msg.error { align-self: flex-start; color: #c0392b; font-size: 13px; }
 .chat form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
@@ -136,14 +170,14 @@ input[type="search"] { width: 100%; box-sizing: border-box; padding: 10px 12px; 
   background: rgba(20, 24, 40, 0.55); }
 .overlay-box { position: relative; width: min(1200px, 100%); max-height: 100%; overflow: auto; background: var(--card); border-radius: 14px;
   padding: 16px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25); }
-.overlay-status { margin: 24px; font: 20px "xkcd", "Comic Sans MS", cursive; color: var(--ink); text-align: center; }
+.overlay-status { margin: 24px; font: 20px var(--hand); color: var(--ink); text-align: center; }
 .overlay-tools { display: flex; gap: 8px; justify-content: flex-end; margin-bottom: 10px; }
-.overlay-tools button, .quiz-actions button { font: inherit; font-size: 14px; padding: 5px 14px; border: 1px solid var(--ink); border-radius: 8px;
+.overlay-tools button, .quiz-actions button { font: 15px var(--hand); padding: 4px 14px; border: 1.5px solid var(--ink); border-radius: 10px;
   background: var(--card); color: var(--ink); cursor: pointer; }
 .overlay .close { border: 0; font-size: 22px; line-height: 1; background: none; color: var(--muted); cursor: pointer; }
 .abstract-slide svg { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; }
 
-.quiz-overlay .overlay-box { width: min(640px, 100%); padding: 20px 24px; font-family: "xkcd", "Comic Sans MS", cursive; color: var(--ink); }
+.quiz-overlay .overlay-box { width: min(640px, 100%); padding: 20px 24px; font-family: var(--hand); color: var(--ink); }
 .quiz-top { display: flex; align-items: center; gap: 12px; }
 .quiz-progress { flex: 1; height: 14px; border-radius: 7px; background: #e6e8f0; overflow: hidden; }
 .quiz-progress div { height: 100%; background: #58cc02; border-radius: 7px; transition: width 0.3s; }
@@ -182,3 +216,9 @@ input[type="search"] { width: 100%; box-sizing: border-box; padding: 10px 12px; 
 .proof-text mark { background: #fff1a8; color: inherit; padding: 1px 2px; border-radius: 3px; box-shadow: 0 0 0 1px #f0d64a; }
 .proof-note { font-size: 17px; }
 .proof-note ul { margin: 4px 0 0; padding-left: 1.2em; }
+
+/* Doodles on figures (marks.js) */
+.marks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; overflow: visible; }
+.marks.off { display: none; }
+.marks text, .abstract-slide .mark-text { font-family: var(--hand); }
+.mark-text { fill: #1f2f7a; stroke: #fff; paint-order: stroke; stroke-linejoin: round; }

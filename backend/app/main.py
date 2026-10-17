@@ -12,8 +12,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import abstract as graphical
-from . import db, extract, proof, quiz, summarize, tutor
-from .schemas import GraphicalAbstract, Note, PageSummary, Paper, Proof, Quiz
+from . import db, extract, memory, proof, quiz, summarize, tutor
+from .schemas import GraphicalAbstract, LearnerProfile, Note, PageSummary, Paper, Proof, Quiz
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
@@ -162,6 +162,43 @@ def make_quiz(paper_id: int) -> Quiz:
         return quiz.make(paper, all_summaries(paper_id, paper), abstract)
 
 
+class QuizResult(BaseModel):
+    right_first_time: int
+    total: int
+    missed: list[dict] = []  # [{"prompt": ..., "answer": ...}]
+
+
+@app.post("/papers/{paper_id}/quiz/result", status_code=204)
+def quiz_result(paper_id: int, result: QuizResult) -> None:
+    """Remember how a quiz went; what was missed feeds the learner profile."""
+    paper = get_paper_or_404(paper_id)
+    missed = "\n".join(f"- {m.get('prompt')} (answer: {m.get('answer')})" for m in result.missed) or "(none)"
+    memory.record(
+        paper_id,
+        "quiz",
+        result.model_dump(),
+        f'Quiz on "{paper.title}": {result.right_first_time}/{result.total} right first time. Missed:\n{missed}',
+    )
+
+
+@app.get("/me")
+def get_me() -> dict:
+    """The My learning page: the learner profile and recent questions and quizzes."""
+    return {"profile": db.get_profile(), "events": db.events()}
+
+
+@app.put("/me/profile")
+def put_profile(profile: LearnerProfile) -> LearnerProfile:
+    """The reader's own edits to what the app has learned about them."""
+    db.save_profile(profile)
+    return profile
+
+
+@app.delete("/me", status_code=204)
+def forget_me() -> None:
+    db.forget_everything()
+
+
 class ProofRequest(BaseModel):
     proof: str  # the question's note id, "p<page>n<note>"
     question: str
@@ -197,6 +234,13 @@ def ask(paper_id: int, page: int, req: AskRequest) -> dict:
     note = summary.notes[req.note] if summary and req.note is not None and 0 <= req.note < len(summary.notes) else None
     with claude_errors(f"tutor for paper {paper_id} page {page}"):
         reply = tutor.answer(paper, page, note, req.selection, req.messages)
+    chat = "\n".join(f"{'Reader' if m['role'] == 'user' else 'Tutor'}: {m['content']}" for m in req.messages)
+    memory.record(
+        paper_id,
+        "question",
+        {"page": page, "selection": req.selection, "question": req.messages[-1]["content"], "answer": reply.reply},
+        f'Reading "{paper.title}", they highlighted "{req.selection}" and chatted with the tutor:\n{chat}\nTutor: {reply.reply}',
+    )
     updated = None
     if note and reply.update_note and (reply.bullets or reply.heading):
         note.bullets = reply.bullets or note.bullets

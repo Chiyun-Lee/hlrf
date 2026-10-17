@@ -80,6 +80,16 @@ async function startQuiz(paperId) {
 
   const finish = () => {
     const firstTry = total - missed.size;
+    // Remember how it went (feeds the learner profile; see the My learning page).
+    api(`/papers/${paperId}/quiz/result`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        right_first_time: firstTry,
+        total,
+        missed: [...missed].map((q) => ({ prompt: q.prompt, answer: q.options[q.answer] })),
+      }),
+    }).catch(() => {});
     box.innerHTML = `
       <div class="quiz-done">
         <div class="quiz-big">${firstTry === total ? "Flawless!" : firstTry >= total * 0.7 ? "Nicely done!" : "You got there!"}</div>
