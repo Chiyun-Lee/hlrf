@@ -349,6 +349,7 @@ def test_agent_is_sent_back_to_fix_the_pins(reviews, monkeypatch, tmp_path):
     work = review.folder(pid) / "work"
     assert (o1.cwd, o1.permission_mode, o1.skills, o1.setting_sources) == (work, "bypassPermissions", ["paper-pins"], ["project"])
     assert (o1.model, o1.effort, o1.tools) == (review.MODEL, review.EFFORT, {"type": "preset", "preset": "claude_code"})
+    assert "CronCreate" in o1.disallowed_tools and "PushNotification" in o1.disallowed_tools
     assert "review" in o1.mcp_servers and o1.strict_mcp_config and "Checking the code and data" in o1.system_prompt["append"]
     assert all(o1.env[v].startswith(str(work)) for v in ("UV_CACHE_DIR", "PIP_CACHE_DIR", "XDG_CACHE_HOME", "MPLCONFIGDIR"))
     assert (work / ".claude" / "skills" / "paper-pins").resolve() == review.SKILLS["paper-pins"].resolve()

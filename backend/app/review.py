@@ -54,6 +54,10 @@ MAX_RUNNING = 2
 TIME_LIMIT = {"full": 6 * 3600, "quick": 3600}  # seconds; a review still going after this is stopped
 FIXES = 2  # times the agent is sent back to fix pins.json
 HOUR_MS = str(3600 * 1000)
+# Default tools an unattended review mustn't use: they outlive it (cron, wake-ups), reach past this machine (remote
+# triggers, push notifications) or work on git outside the work dir (worktrees).
+OFF_LIMITS = ["CronCreate", "CronDelete", "CronList", "ScheduleWakeup", "RemoteTrigger", "PushNotification",
+              "EnterWorktree", "ExitWorktree", "DesignSync"]
 
 # Each kind of review's stages, with the minutes each usually takes (for the progress bar).
 STAGES = {
@@ -601,6 +605,7 @@ def options(run: Run, resume: str | None = None, **extra):
     return ClaudeAgentOptions(
         system_prompt={"type": "preset", "preset": "claude_code", "append": brief(run.depth)},
         tools={"type": "preset", "preset": "claude_code"},
+        disallowed_tools=OFF_LIMITS,
         skills=skills_for(run.depth),
         setting_sources=["project"],  # only the work dir's .claude/ (our skills): none of your own settings or skills
         mcp_servers={"review": create_sdk_mcp_server("review", tools=review_tools(run))},
