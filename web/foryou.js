@@ -55,7 +55,7 @@ async function forYou(day) {
         <p class="fy-sub">${feed.papers.length} papers in ${esc(feed.categories.join(", "))}, ${ORDER[feed.method]}.</p>
       </header>
       <section class="fy-goal" aria-live="polite"></section>
-      ${minePanel(feed.mine)}
+      ${minePanel(feed.mine, feed.profiles)}
       <p class="fy-notice"${feed.notice ? "" : " hidden"}>${esc(feed.notice ?? "")}</p>
       ${picks.length ? `<ol class="fy-picks">${picks.map((p) => paperEntry(p, true)).join("")}</ol>` : ""}
       ${rest.length && picks.length ? `<h2 class="fy-rest">The rest of ${state.weekday}’s listing</h2>` : ""}
@@ -67,6 +67,8 @@ async function forYou(day) {
   renderGoal(root);
   root.addEventListener("click", (e) => onClick(root, e));
   wireMine(root);
+  // The keys act on the selected paper: start on the first one still to sort.
+  setCurrent(root, root.querySelector(".fy-paper:not(.sorted)") ?? root.querySelector(".fy-paper"), false);
   window.MathJax?.typesetPromise?.([root]);
   loadAllSummaries(root, picks, rest);
 }
@@ -222,6 +224,7 @@ async function onClick(root, e) {
   const li = e.target.closest(".fy-paper");
   const p = li && root.state.papers.get(li.dataset.id);
   if (!p) return;
+  if (e.isTrusted) setCurrent(root, li, false); // the keys act on the paper you last clicked
   const fromKeys = !e.isTrusted; // forYouKeys sorts by calling .click(); then move on to the next paper
   if (e.target.closest("a[data-click]")) {
     // Opening a paper counts as (mild) interest. keepalive lets it finish while the new tab opens.
@@ -299,9 +302,14 @@ function moveCurrent(root, step) {
   // Moving on after sorting skips papers that are already sorted.
   let j = i + step;
   if (step > 0 && i >= 0) while (j < cards.length - 1 && cards[j].classList.contains("sorted")) j++;
-  const next = cards[Math.max(0, Math.min(j, cards.length - 1))];
-  cards.forEach((c) => c.classList.toggle("current", c === next));
-  next.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  setCurrent(root, cards[Math.max(0, Math.min(j, cards.length - 1))], true);
+}
+
+function setCurrent(root, card, scroll) {
+  if (!card) return;
+  root.querySelectorAll(".fy-paper.current").forEach((c) => c !== card && c.classList.remove("current"));
+  card.classList.add("current");
+  if (scroll) card.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 }
 
 document.addEventListener("keydown", (e) => {
@@ -319,7 +327,12 @@ document.addEventListener("keydown", (e) => {
 
 // --- your papers: what the ranking and each "why you'd care" start from ---
 
-function minePanel(mine) {
+function minePanel(mine, profiles) {
+  const linked = profiles.length
+    ? `<p class="fy-linked">${profiles
+        .map((p) => `Linked: <a href="${esc(p.url)}" target="_blank" rel="noopener">your ${esc(p.label)} profile</a>, checked daily for new papers. <button type="button" class="fy-remove" data-unlink="${esc(p.url)}">Unlink</button>`)
+        .join("<br>")}</p>`
+    : "";
   const list = mine.length
     ? `<ul class="fy-mine-list">${mine
         .map((p) => `<li><span>${esc(p.title)}</span><button type="button" class="fy-remove" data-id="${esc(p.id)}">Remove</button></li>`)
@@ -331,11 +344,12 @@ function minePanel(mine) {
       <p class="fy-mine-help">${
         mine.length
           ? "For you ranks each day’s papers and writes “Why you’d care” from these, plus what you like and save."
-          : "Add your own arXiv papers so For you can rank each day’s papers by your work and say why each one matters to you."
+          : "Paste your INSPIRE or Google Scholar profile link and For you loads your papers, then ranks each day’s papers by your work and says why each one matters to you. arXiv ids or links work too."
       }</p>
+      ${linked}
       ${list}
       <form class="fy-mine-add">
-        <input name="text" placeholder="2207.01501, arxiv.org/abs/2502.01722, …" aria-label="arXiv ids or links of your papers" autocomplete="off" />
+        <input name="text" placeholder="inspirehep.net/authors/…, scholar.google.com/citations?user=…, or 2207.01501" aria-label="Your INSPIRE or Google Scholar profile link, or arXiv ids" autocomplete="off" />
         <button type="submit" class="fy-btn fy-primary">Add papers</button>
       </form>
       <p class="fy-mine-msg" role="status">${esc(mineFlash ?? "")}</p>
@@ -350,10 +364,19 @@ function wireMine(root) {
     e.preventDefault();
     const button = e.target.querySelector("button");
     button.disabled = true;
-    message.textContent = "Looking them up on arXiv…";
+    const text = e.target.text.value;
+    message.textContent = /inspirehep|scholar\.google/i.test(text)
+      ? "Reading your profile and finding its papers on arXiv… (Google Scholar can take half a minute)"
+      : "Looking them up on arXiv…";
     try {
-      const res = await api("/feed/mine", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ text: e.target.text.value }) });
-      mineFlash = res.unknown.length ? `arXiv doesn’t know ${res.unknown.join(", ")}.` : "";
+      const res = await api("/feed/mine", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ text }) });
+      const notes = [];
+      if (res.profile) {
+        const off = res.off_arxiv ? `, plus ${res.off_arxiv} that aren’t on arXiv` : "";
+        notes.push(`Found ${res.from_profile} of your papers on your ${res.profile} profile${off}. New ones are added each day.`);
+      }
+      if (res.unknown.length) notes.push(`arXiv doesn’t know ${res.unknown.join(", ")}.`);
+      mineFlash = notes.join(" ");
       route(); // re-rank with your papers
     } catch (err) {
       message.textContent = err.message;
@@ -363,8 +386,13 @@ function wireMine(root) {
   panel.addEventListener("click", async (e) => {
     const button = e.target.closest(".fy-remove");
     if (!button) return;
-    await api(`/feed/mine/${button.dataset.id}`, { method: "DELETE" });
-    mineFlash = "";
+    if (button.dataset.unlink) {
+      await api(`/feed/profiles?url=${encodeURIComponent(button.dataset.unlink)}`, { method: "DELETE" });
+      mineFlash = "Unlinked. The papers it added stay; remove any you don’t want.";
+    } else {
+      await api(`/feed/mine/${button.dataset.id}`, { method: "DELETE" });
+      mineFlash = "";
+    }
     route();
   });
 }

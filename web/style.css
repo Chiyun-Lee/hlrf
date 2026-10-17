@@ -133,7 +133,9 @@ input[type="search"] { width: 100%; box-sizing: border-box; padding: 10px 12px; 
 .fy-mine[open] { padding: 14px 18px 4px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
 .fy-mine[open] summary { margin-bottom: 8px; font-weight: 600; color: var(--text); }
 .fy-mine-help { margin: 0 0 10px; color: var(--muted); }
-.fy-mine-list { margin: 0 0 12px; padding: 0; list-style: none; }
+.fy-mine-list { max-height: 260px; overflow-y: auto; margin: 0 0 12px; padding: 0; list-style: none; }
+.fy-linked { margin: 0 0 10px; color: var(--ink); }
+.fy-linked .fy-remove { margin-left: 4px; }
 .fy-mine-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 5px 0; border-top: 1px solid var(--border); font: 15px/1.4 var(--serif); }
 .fy-remove { flex: none; padding: 0; border: 0; background: none; font: 13px system-ui, -apple-system, sans-serif; color: var(--muted); cursor: pointer; }
 .fy-remove:hover { color: var(--warn); }

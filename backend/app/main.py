@@ -128,7 +128,7 @@ def post_feedback(arxiv_id: str, req: FeedbackRequest) -> dict:
 
 
 class MineRequest(BaseModel):
-    text: str  # arXiv ids or links, any separator
+    text: str  # arXiv ids or links, or an INSPIRE or Google Scholar profile link
 
 
 @app.post("/feed/mine")
@@ -140,6 +140,12 @@ def add_mine(req: MineRequest) -> dict:
 @app.delete("/feed/mine/{arxiv_id:path}", status_code=204)
 def remove_mine(arxiv_id: str) -> None:
     feed.remove_mine(arxiv_id)
+
+
+@app.delete("/feed/profiles", status_code=204)
+def unlink_profile(url: str) -> None:
+    """Stop checking a profile for new papers; the papers already added stay."""
+    feed.unlink(url)
 
 
 class SummariesRequest(BaseModel):

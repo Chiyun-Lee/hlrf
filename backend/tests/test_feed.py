@@ -60,6 +60,7 @@ def test_arxiv_id(url, claimed, expected):
 def test_ids_in_pasted_text():
     text = "2207.01501, https://arxiv.org/abs/2502.01722v2\nhep-th/0101001 and 2207.01501 again; not 12207.015011"
     assert feed.ids_in(text) == ["2207.01501", "2502.01722", "hep-th/0101001"]
+    assert feed.ids_in("https://inspirehep.net/authors/1960608 and astro-ph.CO/0601001") == ["astro-ph.CO/0601001"]
 
 
 def test_latest_listing_newest_first_until_you_add_your_papers(fresh):
@@ -74,7 +75,8 @@ def test_latest_listing_newest_first_until_you_add_your_papers(fresh):
 
 def test_your_papers_rank_the_list(fresh):
     response = client.post("/feed/mine", json={"text": "2207.01500 2207.01501, arxiv.org/abs/2207.01502v1 9999.99999"})
-    assert response.json() == {"added": ["2207.01500", "2207.01501", "2207.01502"], "unknown": ["9999.99999"]}
+    assert response.json()["added"] == ["2207.01500", "2207.01501", "2207.01502"]
+    assert (response.json()["unknown"], response.json()["profile"]) == (["9999.99999"], None)
     data = client.get("/feed").json()
     assert data["method"] == "model"
     assert [p["id"] for p in data["papers"]] == ["2610.30001", "2610.30002"]
@@ -165,3 +167,81 @@ def test_saving_a_paper_still_works(monkeypatch):
     monkeypatch.setattr(extract, "extract", lambda *a, **k: (paper, None))
     response = client.post("/papers", json={"url": paper.url})
     assert response.status_code == 200 and response.json()["title"] == "T"
+
+
+# --- Your papers from a profile ---
+
+from app import profiles  # noqa: E402
+
+INSPIRE_URL = "https://inspirehep.net/authors/1960608"
+SCHOLAR_URL = "https://scholar.google.com/citations?hl=en&user=AbC-12_xyzAAAAJ"
+
+
+def fake_get(responses):
+    """profiles.http.get serving {url prefix: (status, body)}; returns the URLs asked for."""
+    asked = []
+
+    def get(url, params=None):
+        asked.append((url, params))
+        status, body = next(v for k, v in responses.items() if url.startswith(k))
+        kwargs = {"json": body} if isinstance(body, dict) else {"text": body}
+        return httpx.Response(status, request=httpx.Request("GET", url), **kwargs)
+
+    return get, asked
+
+
+def inspire_hits(*ids):
+    return {"hits": {"hits": [{"metadata": {"arxiv_eprints": [{"value": i}]}} for i in ids] + [{"metadata": {}}]}}
+
+
+def test_profile_links_are_recognised():
+    assert profiles.find(f"my profile: {INSPIRE_URL}?ui-citation-summary=true") == {"kind": "inspire", "id": "1960608", "url": INSPIRE_URL}
+    assert profiles.find(SCHOLAR_URL)["id"] == "AbC-12_xyzAAAAJ"
+    assert profiles.find("2207.01501") is None
+
+
+def test_inspire_profile_loads_your_papers(fresh, monkeypatch):
+    get, asked = fake_get({"https://inspirehep.net/api/literature": (200, inspire_hits("2207.01500", "2207.01501", "2207.01502"))})
+    monkeypatch.setattr(profiles.http, "get", get)
+    res = client.post("/feed/mine", json={"text": INSPIRE_URL}).json()
+    assert res["added"] == ["2207.01500", "2207.01501", "2207.01502"]
+    assert (res["profile"], res["from_profile"], res["off_arxiv"]) == ("INSPIRE", 3, 1)
+    assert asked[0][1]["q"] == "authors.recid:1960608"
+    data = client.get("/feed").json()
+    assert data["method"] == "model" and data["profiles"] == [{"url": INSPIRE_URL, "label": "INSPIRE"}]
+
+
+def test_scholar_profile_matches_titles_on_arxiv(fresh, monkeypatch):
+    page = '<table><tr><td><a class="gsc_a_at" href="#">Galaxy power spectrum constraints</a></td></tr>' \
+           '<tr><td><a class="gsc_a_at" href="#">My PhD thesis</a></td></tr></table>'
+    get, asked = fake_get({"https://scholar.google.com/citations": (200, page)})
+    monkeypatch.setattr(profiles.http, "get", get)
+    monkeypatch.setattr(arxiv, "by_titles", lambda titles: [(titles[0], MINE[0])])
+    res = client.post("/feed/mine", json={"text": SCHOLAR_URL}).json()
+    assert (res["added"], res["profile"], res["off_arxiv"]) == (["2207.01500"], "Google Scholar", 1)
+    assert "cstart" not in asked[0][1]  # Scholar's robots.txt allows profile pages, not paging through them
+
+
+def test_blocked_scholar_explains(fresh, monkeypatch):
+    get, _ = fake_get({"https://scholar.google.com/citations": (429, "Our systems have detected unusual traffic")})
+    monkeypatch.setattr(profiles.http, "get", get)
+    response = client.post("/feed/mine", json={"text": SCHOLAR_URL})
+    assert response.status_code == 503 and "INSPIRE" in response.json()["detail"]["message"]
+
+
+def test_daily_sync_adds_new_papers_but_not_removed_ones(fresh, monkeypatch):
+    get, _ = fake_get({"https://inspirehep.net/api/literature": (200, inspire_hits("2207.01500", "2207.01501"))})
+    monkeypatch.setattr(profiles.http, "get", get)
+    client.post("/feed/mine", json={"text": INSPIRE_URL})
+    client.delete("/feed/mine/2207.01501")
+
+    get, _ = fake_get({"https://inspirehep.net/api/literature": (200, inspire_hits("2207.01500", "2207.01501", "2207.01503"))})
+    monkeypatch.setattr(profiles.http, "get", get)
+    assert feed.due_profiles() == []  # just synced
+    monkeypatch.setattr(feed, "PROFILE_SYNC_EVERY", timedelta(0))
+    feed.sync_profiles()
+    mine = [p["id"] for p in client.get("/feed").json()["mine"]]
+    assert set(mine) == {"2207.01500", "2207.01503"}  # the new paper, not the one you removed
+
+    client.delete(f"/feed/profiles?url={INSPIRE_URL}")
+    assert feed.linked() == [] and len(client.get("/feed").json()["mine"]) == 2  # papers stay
