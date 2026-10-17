@@ -1,14 +1,30 @@
 const out = document.getElementById("out")!;
 
-// Runs inside the page: collect citation_* / dc.* / og:* meta tags and JSON-LD as hints for the backend.
-function readMeta(): Record<string, string[]> {
+// Runs inside the page, with the user's cookies, so it works on sites that block the backend (Cloudflare,
+// PMC's download check, institutional access). Must be self-contained: Chrome serialises it into the tab.
+async function readPage() {
+  // citation_* / dc.* / og:* meta tags and JSON-LD, as hints for the backend.
   const meta: Record<string, string[]> = {};
   document.querySelectorAll<HTMLMetaElement>("meta[name], meta[property]").forEach((m) => {
     const key = m.getAttribute("name") ?? m.getAttribute("property")!;
     if (/^(citation_|dc\.|og:)/i.test(key)) (meta[key] ??= []).push(m.content);
   });
   meta["json_ld"] = [...document.querySelectorAll('script[type="application/ld+json"]')].map((s) => s.textContent ?? "");
-  return meta;
+
+  // Try to download the PDF here; cross-origin links or download checks fail quietly and the backend falls back to the HTML.
+  let pdf: string | null = null;
+  const pdfUrl = document.querySelector<HTMLMetaElement>('meta[name="citation_pdf_url"]')?.content;
+  if (pdfUrl) {
+    try {
+      const bytes = new Uint8Array(await (await fetch(pdfUrl)).arrayBuffer());
+      if (String.fromCharCode(...bytes.subarray(0, 4)) === "%PDF") {
+        let binary = "";
+        for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+        pdf = btoa(binary);
+      }
+    } catch {}
+  }
+  return { meta, html: document.documentElement.outerHTML, pdf };
 }
 
 async function main() {
@@ -21,12 +37,13 @@ async function main() {
   render();
 
   document.getElementById("save")!.addEventListener("click", async () => {
-    // Meta tags are unavailable on PDF tabs and chrome:// pages; the backend works from the URL alone.
-    const meta = await chrome.scripting
-      .executeScript({ target: { tabId: tab.id! }, func: readMeta })
+    out.textContent = "Reading page…";
+    // Scripts can't run on PDF tabs or chrome:// pages; the backend then downloads the URL itself.
+    const page = await chrome.scripting
+      .executeScript({ target: { tabId: tab.id! }, func: readPage })
       .then(([r]) => r.result)
       .catch(() => ({}));
-    chrome.runtime.sendMessage({ type: "save", url: tab.url, meta });
+    chrome.runtime.sendMessage({ type: "save", url: tab.url, page });
   });
 }
 

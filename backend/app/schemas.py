@@ -1,11 +1,6 @@
-"""Shared data contract between the agent, the API and (later) the reader app."""
+"""Shared data contract between the extractor, the API and the paper browser."""
 
-from typing import Literal
-
-from pydantic import BaseModel
-
-Source = Literal["document", "crossref", "semantic_scholar", "arxiv", "page_meta"]
-Role = Literal["background", "method-used", "compared-against", "dataset", "extends", "contradicts"]
+from pydantic import BaseModel, field_validator
 
 
 class Author(BaseModel):
@@ -20,29 +15,9 @@ class Author(BaseModel):
     affiliations: list[str] = []
 
 
-class CitationContext(BaseModel):
-    sentence: str
-    section: str | None = None
-    page: int | None = None
-    role: Role
+class PaperHeader(BaseModel):
+    """What Claude reads from the paper."""
 
-
-class Reference(BaseModel):
-    label: str  # "[12]" or "Smith et al. 2020"
-    raw: str  # the bibliography entry as printed
-    title: str | None = None
-    authors: list[Author] = []
-    year: int | None = None
-    venue: str | None = None
-    doi: str | None = None
-    arxiv_id: str | None = None
-    source: Source = "document"  # where the resolved metadata came from
-    confidence: float  # 0-1, how sure we are the metadata identifies the right work
-    contexts: list[CitationContext] = []
-
-
-class Paper(BaseModel):
-    url: str
     title: str
     authors: list[Author]
     year: int | None = None
@@ -50,4 +25,40 @@ class Paper(BaseModel):
     doi: str | None = None
     arxiv_id: str | None = None
     contribution_notes: str | None = None  # e.g. "* equal contribution; † work done at X"
-    references: list[Reference] = []
+
+
+class Block(BaseModel):
+    """A paragraph-ish run of text: a PDF text block, or an HTML heading/paragraph."""
+
+    text: str
+    bbox: list[float] | None = None  # [x0, y0, x1, y1] in PDF points from the page's top-left; None for HTML
+
+
+class Page(BaseModel):
+    blocks: list[Block]
+    width: float | None = None  # PDF points; None for HTML
+    height: float | None = None
+
+
+class Paper(PaperHeader):
+    url: str
+    pages: list[Page] = []
+
+    @field_validator("pages", mode="before")
+    @classmethod
+    def _from_text(cls, pages: list) -> list:
+        # Papers saved before blocks existed stored each page as text with paragraphs separated by blank lines.
+        return [{"blocks": [{"text": t} for t in p.split("\n\n") if t.strip()]} if isinstance(p, str) else p for p in pages]
+
+
+class Note(BaseModel):
+    """One note laid over a run of consecutive blocks (e.g. a section heading and the paragraphs under it)."""
+
+    first: int  # index of the first block covered
+    last: int  # index of the last block covered (inclusive)
+    heading: str | None = None  # short, playful title
+    bullets: list[str] = []
+
+
+class PageSummary(BaseModel):
+    notes: list[Note]

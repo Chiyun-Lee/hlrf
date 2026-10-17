@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Human Pretraining",
   "version": "0.1.0",
-  "description": "Save a paper and extract its citations.",
+  "description": "Save a paper to read it in the Human Pretraining library.",
   "action": {
     "default_popup": "popup.html"
   },
