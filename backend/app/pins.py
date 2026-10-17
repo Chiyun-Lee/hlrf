@@ -10,7 +10,7 @@ import json
 import logging
 import re
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 import pymupdf
@@ -23,8 +23,11 @@ from .schemas import Paper, PaperPins, PinTarget
 
 PINS_DIR = Path(__file__).parent / "pins"
 CAPTION_GAP = 40  # PDF points: how far below a figure its caption may start, or above a table its caption may end
-FIGURE_GAP = 15  # the most whitespace between the plots, panels and labels of one figure
-TABLE_GAP = 8  # ...and between a table's rows and rules (body text sits further off)
+FIGURE_REACH = 80  # ...though a figure drawn with blank space around it can end this far from its caption
+FIGURE_GAP = 15  # the most whitespace between the plots and labels of one figure...
+PANEL_GAP = 36  # ...or before another row of its panels
+TABLE_GAP = 8  # ...and between a table's rows and rules (body text sits further off)...
+RULE_GAP = 24  # ...or before another of its rules
 WORDS = {"title": 4, "basic": 22, "researcher": 45}  # most words per pin line: the title sits on the button
 MAX_PINS = 4
 VERDICT_WORDS = 60
@@ -134,8 +137,9 @@ def problems(pins: PaperPins, paper: Paper, found: list[PinTarget] | None = None
 
 def targets(paper: Paper, pdf: bytes) -> list[PinTarget]:
     """Every figure and table in the PDF, in reading order, without pins: each caption that starts with its label,
-    and the pictures, vector graphics, rules and text that sit against it (figures above their captions, tables
-    usually below; whichever side has them). One per label."""
+    and the pictures, vector graphics, rules and text stacked against it. Which side of their captions figures (and
+    tables) sit on is voted by those with something on one side only, so a table caught between two captions goes
+    with the right one. One per label."""
     left, right, columns = text_columns(paper)
     bands = running_bands(paper)
     candidates = defaultdict(list)  # label -> [(page, block, caption as printed, has punctuation)]
@@ -145,94 +149,130 @@ def targets(paper: Paper, pdf: bytes) -> list[PinTarget]:
                 kind = "Figure" if m[2][0] in "fF" else "Table"
                 label = " ".join(filter(None, [(m[1] or "").strip().title(), kind, m[3]]))
                 candidates[label].append((p, i, b.text[: m.end()].strip(), bool(m[4])))
-    tries = defaultdict(list)  # page -> [(block, label, caption)]: the first punctuated caption of each label, else all
+    tries = defaultdict(list)  # page -> [(block, label, caption, punctuated)]: a label's first punctuated caption, else all
     for label, cs in candidates.items():
-        for p, i, caption, _ in [c for c in cs if c[3]][:1] or cs:
-            tries[p].append((i, label, caption))
+        for p, i, caption, punctuated in [c for c in cs if c[3]][:1] or cs:
+            tries[p].append((i, label, caption, punctuated))
 
-    found = {}
+    found, votes = {}, Counter()
     with pymupdf.open(stream=pdf, filetype="pdf") as doc:
-        for p in sorted(tries):
-            page = paper.pages[p]
-            if p >= len(doc) or not page.width:
-                continue
-            head, foot = bands[p]
-            boxes = {i: caption_box(page.blocks, i) for i, b in enumerate(page.blocks) if b.bbox and (m := CAPTION.match(b.text)) and m[4]}
-            in_captions = {j for i in boxes for j in caption_blocks(page.blocks, i)}
-            graphics = page_graphics(doc[p], head, foot)
-            texts = [(box(b.bbox), j) for j, b in enumerate(page.blocks) if b.bbox and j not in in_captions and head - 2 < b.bbox[1] and b.bbox[3] < foot + 2]
+        pages = {p: layout(paper, doc, p, bands[p], left, right, columns[p]) for p in sorted(tries) if p < len(doc) and paper.pages[p].width}
+        for p, lay in pages.items():
+            for i, label, _, punctuated in tries[p]:
+                kind = label.split()[-2]
+                above, below = (drawn(s, kind) for s in sides(lay, i, kind, set()))
+                if punctuated and above != below:
+                    votes[kind, -1 if above else 1] += 1
+        prefer = {k: 1 if votes[k, 1] > votes[k, -1] else -1 if votes[k, -1] > votes[k, 1] else default for k, default in (("Figure", -1), ("Table", 1))}
+        for p, lay in pages.items():
             claimed = set()
-            for i, label, caption in sorted(tries[p], key=lambda t: page.blocks[t[0]].bbox[1]):
-                if label in found:
+            for i, label, caption, _ in sorted(tries[p], key=lambda t: lay["blocks"][t[0]].bbox[1]):
+                kind = label.split()[-2]
+                if label in found or not (picked := choose(sides(lay, i, kind, claimed), kind, prefer[kind])):
                     continue
-                cap = boxes.get(i) or caption_box(page.blocks, i)
-                others = [r for k, r in boxes.items() if k != i]
-                span = column_span(cap, others, page.width, left, right, columns[p])
-                colw = (right - left) / (2 if columns[p] else 1)
-                if region := place(cap, label.split()[-2], span, graphics, texts, others, claimed, colw, page.blocks):
-                    found[label] = PinTarget(label=label, page=p, caption=caption, bbox=snap(region, cap), pins=[])
+                claimed.update(key for _, key in picked)
+                region = union([r for r, (t, _) in picked if t != "c"])
+                found[label] = PinTarget(label=label, page=p, caption=caption, bbox=snap(region, lay["boxes"][i]), pins=[])
     mid = (left + right) / 2  # reading order: page by page, down the left column (or the page), then the right
     return sorted(found.values(), key=lambda t: (t.page, columns[t.page] and t.bbox[0] >= mid - 10, t.bbox[1]))
 
 
-def place(cap, kind, span, graphics, texts, others, claimed, colw, blocks):
-    """The box of the figure or table whose caption is `cap`, or None. Claims what it takes, so the next caption on
-    the page can't take it too."""
+def layout(paper: Paper, doc, p: int, band, left, right, two_columns) -> dict:
+    """What `sides` needs of a page: its blocks, captions (punctuated ones block other figures), graphics and text."""
+    blocks, (head, foot) = paper.pages[p].blocks, band
+    captions = {i for i, b in enumerate(blocks) if b.bbox and (m := CAPTION.match(b.text))}
+    boxes = {i: caption_box(blocks, i) for i in captions}
+    in_captions = {j for i in boxes if CAPTION.match(blocks[i].text)[4] for j in caption_blocks(blocks, i)}
+    texts = [(box(b.bbox), j) for j, b in enumerate(blocks) if b.bbox and j not in in_captions and head - 2 < b.bbox[1] and b.bbox[3] < foot + 2]
+    return dict(blocks=blocks, boxes=boxes, stops={i for i in boxes if CAPTION.match(blocks[i].text)[4]}, texts=texts,
+                graphics=page_graphics(doc[p], head, foot), width=paper.pages[p].width, left=left, right=right,
+                two_columns=two_columns, colw=(right - left) / (2 if two_columns else 1))
+
+
+def sides(lay: dict, i: int, kind: str, claimed: set) -> list[list]:
+    """What stacks above and below caption block i: lists of (box, key), key ("g" graphic, "c" canvas or "t" text,
+    index). Other captions, body text (for figures) and what other captions claimed stop a stack."""
+    cap, blocks = lay["boxes"][i], lay["blocks"]
+    others = [r for k, r in lay["boxes"].items() if k != i and k in lay["stops"]]
+    span = column_span(cap, others, lay["width"], lay["left"], lay["right"], lay["two_columns"])
     within = lambda r: span[0] <= (r[0] + r[2]) / 2 <= span[1]
     beside = lambda r: r[0] < span[1] and span[0] < r[2]
-    items = [(r, ("g", k)) for k, r in enumerate(graphics) if within(r) and not overlaps(r, cap)]
-    stops = [r for r in others if beside(r)]
+    items = [(r, ("g" if ink else "c", k)) for k, (r, ink) in enumerate(lay["graphics"]) if within(r) and not overlaps(r, cap)]
+    stops = [(r, None) for r in others if beside(r)]
     if kind == "Figure":  # body text stops a figure; the labels in it don't
-        items += [(r, ("t", j)) for r, j in texts if within(r) and not is_body(blocks[j], r, colw)]
-        stops += [r for r, j in texts if beside(r) and is_body(blocks[j], r, colw)]
+        items += [(r, ("t", j)) for r, j in lay["texts"] if within(r) and j != i and not is_body(blocks[j], r, lay["colw"])]
+        stops += [(r, ("t", j)) for r, j in lay["texts"] if beside(r) and j != i and is_body(blocks[j], r, lay["colw"])]
     else:  # a table's rows can be as long and wide as any paragraph, so only the gap ends it
-        items += [(r, ("t", j)) for r, j in texts if within(r)]
+        items += [(r, ("t", j)) for r, j in lay["texts"] if within(r) and j != i]
+    stops = [(r, None if key in claimed else key) for r, key in stops] + [(r, None) for r, key in items if key in claimed]
     items = [(r, key) for r, key in items if key not in claimed]
-    stops += [r for r, key in items if key in claimed]
-    gap = FIGURE_GAP if kind == "Figure" else TABLE_GAP
-    sides = [stack(cap, side, items, stops, gap) for side in (-1, 1)]  # above, below
-
-    def drawn(picked):  # some graphics, and for a figure enough of them to be a picture
-        g = [r for r, (t, _) in picked if t == "g"]
-        return g and (kind != "Figure" or (union(g)[2] - union(g)[0] >= 20 and union(g)[3] - union(g)[1] >= 20))
-
-    if kind == "Figure":
-        picked = next((s for s in sides if drawn(s)), None)  # above first: figure captions go below
-    else:  # tables: the side with rules; if both or neither, the nearer one
-        ruled = [s for s in sides if drawn(s)]
-        options = ruled if len(ruled) == 1 else [s for s in sides if s]
-        picked = min(options, key=lambda s: distance(cap, s[0][0]), default=None)
-    if not picked:
-        return None
-    claimed.update(key for _, key in picked)
-    return union([r for r, _ in picked])
+    if kind == "Figure":  # another row of panels starts with something tall: an axis, a frame, a picture
+        first, gap, jump, anchor = FIGURE_REACH, FIGURE_GAP, PANEL_GAP, lambda r, extent: r[3] - r[1] >= 20
+    else:  # more of a table starts with a rule at least half its width
+        first, gap, jump, anchor = CAPTION_GAP, TABLE_GAP, RULE_GAP, lambda r, extent: r[3] - r[1] <= 2 and r[2] - r[0] >= (extent[2] - extent[0]) / 2
+    return [stack(cap, side, items, stops, first, gap, jump, anchor) for side in (-1, 1)]
 
 
-def stack(cap, side, items, stops, gap):
-    """Items stacked away from the caption on one side (-1 above, 1 below): the first within CAPTION_GAP of it, each
-    next within `gap` of those taken; a stop ends the stack."""
+def drawn(picked, kind: str) -> bool:
+    """Whether a stack has graphics (a table's rules), and for a figure enough of them to be a picture."""
+    g = [r for r, (t, _) in picked if t == "g"]
+    return bool(g) and (kind != "Figure" or (union(g)[2] - union(g)[0] >= 20 and union(g)[3] - union(g)[1] >= 20))
+
+
+def choose(stacks, kind: str, prefer: int):
+    """The stack that is the figure or table: the preferred side's if it has graphics, else the other's; a table of
+    text alone (no rules) takes whichever side has anything, preferred first."""
+    ordered = stacks if prefer < 0 else stacks[::-1]
+    return next((s for s in ordered if drawn(s, kind)), None) or (next((s for s in ordered if s), None) if kind == "Table" else None)
+
+
+def stack(cap, side, items, stops, first, gap, jump, anchor):
+    """Items stacked away from the caption on one side (-1 above, 1 below): the first within `first` of it, each next
+    within `gap` of those taken, or within `jump` when it starts more of the same figure or table (an `anchor`, or a
+    label right against one). A stop ends the stack, unless it's text inside what's taken already (a figure's row of
+    panel titles can look like a paragraph); stops without a key always do."""
     near = (lambda r: r[3]) if side < 0 else (lambda r: r[1])
     on_side = lambda r: r[3] <= cap[1] + 1 if side < 0 else r[1] >= cap[3] - 1
-    queue = sorted([(r, key) for r, key in items if on_side(r)] + [(r, None) for r in stops if on_side(r)], key=lambda t: side * near(t[0]))
-    edge, allowed, picked = cap[1] if side < 0 else cap[3], CAPTION_GAP, []
-    for r, key in queue:
-        if side * (near(r) - edge) > allowed or key is None:
+    queue = [(r, key, False) for r, key in items if on_side(r)] + [(r, key, True) for r, key in stops if on_side(r)]
+    graphics = [r for r, key in items if key[0] == "g" and on_side(r)]
+
+    def more(r, key, extent):  # r is an anchor, or a label (or tick) with one just beyond it
+        lo, hi = (r[1] - gap, r[3]) if side < 0 else (r[1], r[3] + gap)
+        return key[0] != "t" and anchor(r, extent) or any(lo <= near(a) <= hi and a[0] < r[2] and r[0] < a[2] and anchor(a, extent) for a in graphics)
+
+    edge, picked, extent = cap[1] if side < 0 else cap[3], [], None
+    for r, key, stop in sorted(queue, key=lambda t: side * near(t[0])):
+        far = side * (near(r) - edge)
+        if far > (max(gap, jump) if picked else first) or stop and not (key and extent and inside(r, extent)):
             break
+        if picked and far > gap and not more(r, key, extent):
+            continue  # too far for a stray label or line, but more of the figure or table further on may still join
         picked.append((r, key))
-        edge, allowed = (min(edge, r[1]) if side < 0 else max(edge, r[3])), gap
+        extent = union([extent, r]) if extent else r
+        edge = min(edge, r[1]) if side < 0 else max(edge, r[3])
     return picked
 
 
-def page_graphics(pg, head: float, foot: float) -> list[tuple]:
-    """The page's pictures and visible vector paths between its running header and footer (white fills, such as a
-    plot's background, are just paper)."""
+def page_graphics(pg, head: float, foot: float) -> list[tuple[tuple, bool]]:
+    """The page's pictures and vector paths between its running header and footer, each with whether it shows: a
+    white fill (a plot's canvas) is just paper, so it can join a figure's panels but doesn't count towards its box.
+    Paths are cut to their clip (a contour plot's fills run far outside its axes)."""
     W, H = pg.rect.width, pg.rect.height
-    rects = [i["bbox"] for i in pg.get_image_info()] + [d["rect"] for d in pg.get_cdrawings() if visible(d)]
+    rects, clips = [(i["bbox"], True) for i in pg.get_image_info()], []  # clips: (level, box) of the enclosing clips
+    for d in pg.get_cdrawings(extended=True):
+        level = d.get("level", 0)
+        while clips and clips[-1][0] >= level:
+            clips.pop()
+        if d["type"] in ("clip", "group"):
+            scissor = d.get("scissor") or (clips[-1][1] if clips else (0, 0, W, H))
+            clips.append((level, cut(scissor, clips[-1][1]) or (0, 0, 0, 0) if clips else scissor))
+        elif r := cut(d["rect"], clips[-1][1]) if clips else d["rect"]:
+            rects.append((r, visible(d)))
     out = []
-    for x0, y0, x1, y1 in rects:
+    for (x0, y0, x1, y1), ink in rects:
         if y1 < head + 2 or y0 > foot - 2 or (x1 - x0) * (y1 - y0) > 0.9 * W * H:  # header rules, page backgrounds
             continue
-        out.append((max(x0, 0), max(y0, head + 2), min(x1, W), min(y1, foot - 2)))
+        out.append(((max(x0, 0), max(y0, head + 2), min(x1, W), min(y1, foot - 2)), ink))
     return out
 
 
@@ -290,12 +330,13 @@ def is_body(block, r, colw) -> bool:
 
 
 def snap(r, cap) -> list[float]:
-    """Whole points, clear of the caption (so `fits` holds)."""
+    """Whole points, clear of the caption and within CAPTION_GAP of it (taking in any blank space between), so that
+    `fits` holds."""
     x0, y0, x1, y1 = int(r[0]), int(r[1]), -int(-r[2]), -int(-r[3])
     if r[3] <= cap[1]:
-        y1 = min(y1, int(cap[1]))
+        y1 = min(max(y1, int(cap[1]) - CAPTION_GAP + 2), int(cap[1]))
     if r[1] >= cap[3]:
-        y0 = max(y0, -int(-cap[3]))
+        y0 = max(min(y0, -int(-cap[3]) + CAPTION_GAP - 2), -int(-cap[3]))
     return [x0, y0, x1, y1]
 
 
@@ -307,12 +348,18 @@ def union(rects) -> tuple:
     return min(r[0] for r in rects), min(r[1] for r in rects), max(r[2] for r in rects), max(r[3] for r in rects)
 
 
+def cut(a, b) -> tuple | None:
+    """The part of box a inside box b, or None (a line has no height, so empty boxes are kept)."""
+    r = max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])
+    return r if r[0] <= r[2] and r[1] <= r[3] else None
+
+
+def inside(a, b, tol=2) -> bool:
+    return a[0] >= b[0] - tol and a[1] >= b[1] - tol and a[2] <= b[2] + tol and a[3] <= b[3] + tol
+
+
 def overlaps(a, b) -> bool:
     return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
-
-
-def distance(cap, r) -> float:
-    return max(cap[1] - r[3], r[1] - cap[3])
 
 
 def iou(a, b) -> float:
