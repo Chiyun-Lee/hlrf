@@ -79,6 +79,9 @@ async function renderReader(container, paperId, p) {
   // Highlight text (in a note or the original) to ask about it; see chat.js.
   enableAsk(container, paperId);
 
+  // Write or draw on the pages and Ask about it (ink.js).
+  setupInk(container, paperId, p);
+
   // Re-fit note text once the handwriting font arrives and whenever the page width changes.
   const refit = () => {
     container.querySelectorAll(".pdf-page").forEach((el) => el.style.setProperty("--scale-factor", el.clientWidth / el.pageWidth));
