@@ -1,11 +1,11 @@
-"""One structured Claude call: send a prompt, get a validated Pydantic object back."""
+"""One structured Claude call: send a prompt (or a conversation), get a validated Pydantic object back."""
 
 import logging
 from typing import TypeVar
 
 import anthropic
 from dotenv import load_dotenv
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 load_dotenv()
 log = logging.getLogger(__name__)
@@ -13,12 +13,27 @@ client = anthropic.Anthropic()
 T = TypeVar("T", bound=BaseModel)
 
 
-def ask(schema: type[T], system: str, prompt: str, model: str, effort: str) -> T:
+def ask(schema: type[T], system: str, prompt: str | list, model: str, effort: str, tries: int = 2) -> T:
+    """`prompt` is a user message (text, or content blocks such as images + text) or a full list of messages.
+
+    An answer that is refused, cut short or doesn't fit `schema` is retried once (`tries`) before giving up: these are
+    usually one-offs (a safety classifier misfiring on a biology paper, say)."""
+    messages = prompt if isinstance(prompt, list) and prompt and "role" in prompt[0] else [{"role": "user", "content": prompt}]
+    for attempt in range(1, tries + 1):
+        try:
+            return _ask_once(schema, system, messages, model, effort)
+        except (RuntimeError, ValidationError) as e:
+            if attempt == tries:
+                raise
+            log.warning("retrying %s after: %s", schema.__name__, str(e)[:200])
+
+
+def _ask_once(schema: type[T], system: str, messages: list, model: str, effort: str) -> T:
     with client.beta.messages.stream(
         model=model,
         max_tokens=64000,  # thinking counts too, so leave room
         system=system,
-        messages=[{"role": "user", "content": prompt}],
+        messages=messages,
         thinking={"type": "adaptive"},
         # Parsed below rather than via output_format, which raises mid-stream before stop_reason is known.
         output_config={"effort": effort, "format": {"type": "json_schema", "schema": anthropic.transform_schema(schema)}},

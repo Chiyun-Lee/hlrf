@@ -4,6 +4,8 @@ from types import SimpleNamespace as Block
 import pytest
 
 from app.llm import answer_text
+from app.proof import locate
+from app.summarize import parse_note_id
 from app.schemas import Paper
 
 
@@ -25,6 +27,16 @@ def test_answer_after_safety_fallback():
     content = [Block(type="text", text='{"title": "cut off'), fallback, Block(type="text", text='{"title": "full"}')]
     assert answer_text(content) == '{"title": "full"}'
     assert answer_text([Block(type="thinking"), Block(type="text", text="{}")]) == "{}"
+
+
+def test_note_ids_and_quote_lookup():
+    assert parse_note_id("p12n3") == (12, 3)
+    with pytest.raises(ValueError):
+        parse_note_id("figure 2")
+    text = "The Transformer allows for significantly more\nparallelization and can reach a new state"
+    start, end = locate(text, "allows for significantly more parallelization")
+    assert text[start:end].startswith("allows") and text[start:end].endswith("parallelization")
+    assert locate(text, "not in there") is None
 
 
 # Live end-to-end check against a hand-labelled paper. Costs API credit.

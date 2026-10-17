@@ -1,5 +1,7 @@
 """Shared data contract between the extractor, the API and the paper browser."""
 
+from typing import Literal
+
 from pydantic import BaseModel, field_validator
 
 
@@ -52,13 +54,69 @@ class Paper(PaperHeader):
 
 
 class Note(BaseModel):
-    """One note laid over a run of consecutive blocks (e.g. a section heading and the paragraphs under it)."""
+    """One note laid over the blocks it covers, e.g. a section heading and all the paragraphs under it on this page."""
 
-    first: int  # index of the first block covered
-    last: int  # index of the last block covered (inclusive)
-    heading: str | None = None  # short, playful title
+    kind: Literal["summary", "figure", "aside"]  # aside: not the science (funding, references, ...), just blurred
+    blocks: list[int]  # indices of the blocks covered
+    heading: str | None = None  # short, playful title; a plain label for asides
     bullets: list[str] = []
 
 
 class PageSummary(BaseModel):
     notes: list[Note]
+
+
+class TutorReply(BaseModel):
+    reply: str  # the answer shown in the chat
+    update_note: bool = False  # true when the note should change (added to or reworded)
+    heading: str | None = None  # the note's new title, when update_note and it should change
+    bullets: list[str] = []  # the note's complete new bullet list, when update_note
+
+
+class FlowStep(BaseModel):
+    kind: Literal["question", "approach", "finding", "meaning"]
+    text: str  # a few words; it sits in a small box
+
+
+class AbstractFigure(BaseModel):
+    figure: str  # which figure note, as "p<page>n<note>" (0-indexed), e.g. "p3n1"
+    label: str  # a short handwritten callout: what to notice
+    image: str | None = None  # filled in by the backend: data: URI of the figure cropped from the PDF
+    width: float | None = None
+    height: float | None = None
+
+
+class GraphicalAbstract(BaseModel):
+    """A one-slide memory jog for the whole paper (rendered as SVG by web/abstract.js)."""
+
+    title: str  # playful
+    takeaway: str  # the one-line point of the paper
+    flow: list[FlowStep]  # what was done and found, in order
+    bullets: list[str]  # the handful of things worth remembering
+    figures: list[AbstractFigure]  # one or two key figures
+
+
+class QuizQuestion(BaseModel):
+    kind: Literal["choice", "blank"]  # blank: `prompt` has "___" and `options` is the word bank
+    prompt: str
+    options: list[str]
+    answer: int  # index into options
+    explanation: str  # one line, shown after answering
+    proof: str | None = None  # the note backing the answer, as "p<page>n<note>"; see app/proof.py
+
+
+class Quiz(BaseModel):
+    questions: list[QuizQuestion]
+
+
+class Quote(BaseModel):
+    quote: str  # the exact words from the original text that settle the question
+
+
+class Proof(BaseModel):
+    """The original text behind a quiz answer, for the quiz's "Show me the proof"."""
+
+    page: int
+    paragraph: str  # the original paragraph holding the quote
+    quote: str | None  # the key words, verbatim from `paragraph` (None if they couldn't be pinned down)
+    note: Note  # the summarised version

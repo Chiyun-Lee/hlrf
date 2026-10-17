@@ -13,6 +13,7 @@ const routes = [
 
 async function route() {
   const [re, view] = routes.find(([re]) => re.test(location.hash)) ?? [/$/, notFound];
+  closeChat();
   app.innerHTML = `<p class="muted">Loading…</p>`;
   try {
     await view(...location.hash.match(re).slice(1));
@@ -79,6 +80,8 @@ async function paper(id) {
         ${p.doi ? `<a href="https://doi.org/${esc(p.doi)}" target="_blank">DOI ${esc(p.doi)}</a>` : ""}
         ${p.arxiv_id ? `<a href="https://arxiv.org/abs/${esc(p.arxiv_id)}" target="_blank">arXiv ${esc(p.arxiv_id)}</a>` : ""}
         <button class="toggle-notes" id="toggle-notes">Show originals</button>
+        <button class="toggle-notes" id="abstract">${p.has_abstract ? "Graphical abstract" : "Done? Make graphical abstract"}</button>
+        <button class="toggle-notes quiz-button" id="quiz" ${p.has_abstract ? "" : "hidden"}>Quiz me ✦</button>
         <button class="delete" id="delete">Delete</button>
       </div>
     </section>
@@ -90,6 +93,15 @@ async function paper(id) {
     setAllNotes(doc, on);
     toggle.textContent = on ? "Show originals" : "Show notes";
   });
+  const abstractButton = app.querySelector("#abstract");
+  const quizButton = app.querySelector("#quiz");
+  abstractButton.addEventListener("click", () =>
+    showAbstract(id, p.title, {
+      make: !p.has_abstract,
+      onReady: () => ((p.has_abstract = true), (abstractButton.textContent = "Graphical abstract"), (quizButton.hidden = false)),
+    }),
+  );
+  quizButton.addEventListener("click", () => startQuiz(id));
   app.querySelector("#delete").addEventListener("click", async () => {
     await deletePaper(id);
     location.hash = "#/";
@@ -109,7 +121,7 @@ async function deletePaper(id) {
 
 async function api(path, options) {
   const res = await fetch(path, options);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail ?? `${res.status} ${res.statusText}`);
   return res.status === 204 ? null : res.json();
 }
 
