@@ -274,6 +274,18 @@ def test_live_view_lines(tmp_path, monkeypatch):
     assert review.describe(done, work) == [("done", "Agent finished after 1 h 52 min, 143 turns, $41.50")]
     monkeypatch.setattr(llm, "BACKEND", "claude-code")  # on the subscription: no cost
     assert review.describe(done, work) == [("done", "Agent finished after 1 h 52 min, 143 turns")]
+    helper = sdk.TaskNotificationMessage(subtype="task_notification", data={}, task_id="a", status="completed",
+                                         output_file="o", summary="Re-ran desidr2.ipynb: matches Table II", uuid="u", session_id="s")
+    assert review.describe(helper, work) == [("text", "Helper completed: Re-ran desidr2.ipynb: matches Table II")]
+    resets = int(review.ts("2026-10-17T18:00:00+00:00"))
+
+    def limit(status):
+        return sdk.RateLimitEvent(sdk.RateLimitInfo(status=status, resets_at=resets), uuid="u", session_id="s")
+
+    at = f"(resets at {review.datetime.fromtimestamp(resets):%H:%M})"
+    assert review.describe(limit("rejected"), work) == [("error", f"Claude usage limit reached {at}")]
+    assert review.describe(limit("allowed_warning"), work) == [("text", f"Close to the Claude usage limit {at}")]
+    assert review.describe(limit("allowed"), work) == []
 
 
 def test_stage_and_check_pins_tools(reviews):
@@ -297,7 +309,7 @@ def test_stage_and_check_pins_tools(reviews):
     assert (run.work / "paper.txt").read_text().startswith("=== Page 1 ===\n\nFigure 1. A plot.")
 
 
-def agent_run(reviews, monkeypatch, tmp_path, write_pins, init_skills=("paper-pins",)):
+def agent_run(reviews, monkeypatch, tmp_path, write_pins, init_skills=("paper-pins",), init_tools=("mcp__review__stage",)):
     """A quick review with Claude Code faked: each session writes pins.json with write_pins(call number)."""
     sdk = pytest.importorskip("claude_agent_sdk")
     monkeypatch.setattr(review, "DEMO", False)
@@ -306,7 +318,7 @@ def agent_run(reviews, monkeypatch, tmp_path, write_pins, init_skills=("paper-pi
 
     async def fake_query(prompt, options):
         calls.append((prompt, options))
-        yield sdk.SystemMessage(subtype="init", data={"skills": list(init_skills)})
+        yield sdk.SystemMessage(subtype="init", data={"skills": list(init_skills), "tools": list(init_tools)})
         yield sdk.AssistantMessage(model="m", content=[sdk.ToolUseBlock("t", "Bash", {"description": "Read the repository"})],
                                    parent_tool_use_id="helper")
         if (data := write_pins(len(calls))) is not None:
@@ -349,6 +361,8 @@ def test_pins_that_stay_broken_fail_the_review(reviews, monkeypatch, tmp_path):
 def test_missing_skill_fails_at_once(reviews, monkeypatch, tmp_path):
     pid, st, calls = agent_run(reviews, monkeypatch, tmp_path, lambda call: GOOD, init_skills=())
     assert len(calls) == 1 and st["state"] == "failed" and "didn't find the paper-pins skill" in st["error"]
+    pid, st, calls = agent_run(reviews, monkeypatch, tmp_path / "2", lambda call: GOOD, init_tools=())
+    assert len(calls) == 1 and st["state"] == "failed" and "stage and check_pins tools" in st["error"]
 
 
 def test_full_review_needs_paper2agent(reviews, monkeypatch, tmp_path):
