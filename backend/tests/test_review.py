@@ -380,6 +380,16 @@ def test_full_review_needs_paper2agent(reviews, monkeypatch, tmp_path):
     assert r.status_code == 400 and "paper2agent" in r.json()["detail"] and "quick review" in r.json()["detail"]
 
 
+def test_big_tool_results_fit(reviews):
+    """A tool result over the SDK's default 1 MB (a PDF page read whole) used to end the review with CLIJSONDecodeError."""
+    pytest.importorskip("claude_agent_sdk")
+    pid = paper()
+    review.begin(pid, "quick")
+    run = review.Run(pid, "quick")
+    review.prepare(run)
+    assert review.options(run).max_buffer_size == llm.MAX_MESSAGE >= 32 * 2**20
+
+
 # A tiny real run on your Claude subscription (as with LLM_BACKEND=claude-code): proves the SDK wiring.
 @pytest.mark.skipif(not os.environ.get("RUN_LIVE"), reason="set RUN_LIVE=1 to call Claude")
 def test_live_sdk_wiring(monkeypatch, tmp_path):

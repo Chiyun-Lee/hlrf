@@ -11,9 +11,10 @@ On the app, the user can view an interactive version of the paper's PDF, where t
 ```sh
 cd backend
 cp .env.example .env   # add your ANTHROPIC_API_KEY
-uv sync
-uv run uvicorn app.main:app --reload
+uv sync --extra claude-code
+uv run --extra claude-code uvicorn app.main:app --reload
 ```
+Keep `--extra claude-code` on every `uv sync` and `uv run`: without it uv uninstalls the Claude Agent SDK, and the agent review (and `LLM_BACKEND=claude-code`) stop working.
 `POST /papers {"url": ..., "meta": {...}}` downloads the paper, extracts its text page by page (`app/extract.py`), and makes one Claude call to read the title and authors (including equal-contribution and corresponding markers). The record (`app/schemas.py`) is stored in SQLite. `GET /papers/{id}` returns it. Set `EXTRACT_MODEL` / `EXTRACT_EFFORT` in `.env` to trade speed for accuracy.
 
 **Extension**:
@@ -32,4 +33,4 @@ Then open `chrome://extensions`, turn on Developer mode, choose "Load unpacked" 
 
 **Claude through your subscription**: set `LLM_BACKEND=claude-code` in `backend/.env` and run `uv sync --extra claude-code`. Every Claude call (summaries, saving papers, page notes) then goes through the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview), which runs Claude Code with the login from `claude` instead of an API key (`app/llm.py`). For running the app yourself: Anthropic doesn't allow offering claude.ai login in products you distribute.
 
-**Tests**: `cd backend && uv run pytest` (add `RUN_LIVE=1` to call Claude end to end).
+**Tests**: `cd backend && uv run --extra claude-code pytest` (add `RUN_LIVE=1` to call Claude end to end).

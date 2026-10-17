@@ -132,6 +132,6 @@ def crop_figures(cards: SummaryCards, paper: Paper, summaries: list[PageSummary]
             log.exception("figure %s skipped", f.figure)
             continue
         if crop:
-            f.image, f.width, f.height = crop
+            f.image, f.width, f.height, _clip = crop
             kept.append(f)
     return kept

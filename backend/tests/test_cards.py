@@ -1,6 +1,7 @@
+import pymupdf
 import pytest
 
-from app.cards import clean, stated
+from app.cards import clean, crop_figures, stated
 from app.schemas import ChartItem, PageSummary, Paper, SummaryCards
 
 PAPER = Paper(
@@ -59,3 +60,18 @@ def test_clean_trims_and_drops_bad_content():
 def test_clean_rejects_empty_deck():
     with pytest.raises(RuntimeError):
         clean(deck(tldr=" "), PAPER, NOTES)
+
+
+def test_figures_are_cropped_from_the_pdf():
+    """Runs the real crop (app/abstract.py) on a one-page PDF with a drawn figure above its caption."""
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=600, height=800)
+        page.draw_rect(pymupdf.Rect(100, 100, 500, 400), color=(0, 0, 0), fill=(0.2, 0.4, 0.8))
+        page.insert_text((100, 430), "Figure 1. A blue box.")
+        pdf = doc.tobytes()
+    paper = Paper(url="u", title="T", authors=[], pages=[{"width": 600, "height": 800, "blocks": [
+        {"text": "Figure 1. A blue box.", "bbox": [100, 418, 300, 434]}]}])
+    notes = [PageSummary(notes=[{"kind": "figure", "blocks": [0], "bullets": ["y"]}])]
+    cards = deck(figures=[{"figure": "p0n0", "callout": "look"}])
+    [figure] = crop_figures(cards, paper, notes, pdf)
+    assert figure.image.startswith("data:image/png;base64,") and figure.width > 300 and figure.height > 250
