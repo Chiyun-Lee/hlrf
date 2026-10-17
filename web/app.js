@@ -119,12 +119,20 @@ async function paper(id) {
     </section>
     <article class="doc" id="doc"></article>`;
   const doc = app.querySelector("#doc");
+  // Show originals switches every note off (and keeps notes written later off), leaving the paper as printed with any
+  // agent-review pins on it; the choice holds from paper to paper.
   const toggle = app.querySelector("#toggle-notes");
-  toggle.addEventListener("click", () => {
-    const on = toggle.textContent === "Show notes";
+  const showNotes = (on) => {
     setAllNotes(doc, on);
     toggle.textContent = on ? "Show originals" : "Show notes";
+    toggle.setAttribute("aria-pressed", String(!on));
+  };
+  toggle.addEventListener("click", () => {
+    const on = doc.classList.contains("originals");
+    showNotes(on);
+    remember("originals", !on);
   });
+  if (recall("originals")) showNotes(false);
   const abstractButton = app.querySelector("#abstract");
   const quizButton = app.querySelector("#quiz");
   abstractButton.addEventListener("click", () =>
@@ -161,6 +169,21 @@ async function api(path, options) {
     throw Object.assign(new Error(message ?? `${res.status} ${res.statusText}`), { status: res.status, detail });
   }
   return res.status === 204 ? null : res.json();
+}
+
+// A choice kept in this browser (localStorage can be blocked: then it lasts until the page is left).
+function remember(key, on) {
+  try {
+    localStorage.setItem(key, on ? "1" : "");
+  } catch {}
+}
+
+function recall(key) {
+  try {
+    return localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
 }
 
 function shortAuthors(names) {

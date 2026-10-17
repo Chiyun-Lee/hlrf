@@ -186,6 +186,7 @@ function addNote(el, page, n, index, onPdf) {
     note.parts.push(part);
   }
   onPdf ? (place(note, main, page), el.append(note)) : main.append(note);
+  if (el.closest(".originals")) setNote(note, false); // the reader shows originals: notes written since stay off
   fit(note);
 }
 
@@ -308,6 +309,7 @@ function setNote(note, on) {
 }
 
 function setAllNotes(container, on) {
+  container.classList.toggle("originals", !on); // so notes that arrive later follow suit (addNote)
   container.querySelectorAll(".note:not(.part)").forEach((n) => setNote(n, on));
 }
 

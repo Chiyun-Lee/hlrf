@@ -148,6 +148,8 @@ input[type="search"] { width: 100%; box-sizing: border-box; padding: 10px 12px; 
 .pins-summary { margin-top: 16px; font-size: 14px; line-height: 1.5; }
 .pins-summary p { margin: 0; max-width: 72ch; }
 .pins-counts { color: var(--ink); }
+.pins-toggle { margin-left: 8px; }
+.pins-hidden :is(.pins, .pin-target, .pin-card) { display: none; } /* Hide pins: the paper as printed (pins.js) */
 .pins-summary .pins-verdict { margin-top: 4px; padding-left: 10px; border-left: 2px solid var(--ink); }
 @media (prefers-reduced-motion: reduce) { .pin, .pin-target { transition: none; } }
 
@@ -310,6 +312,10 @@ input[type="search"] { width: 100%; box-sizing: border-box; padding: 10px 12px; 
 .textLayer ::selection { background: rgba(31, 47, 122, 0.25); }
 .note.off { pointer-events: none; } /* let the original underneath be selected... */
 .note.off .switch { pointer-events: auto; } /* ...but keep the switch clickable */
+/* Show originals (the whole paper as printed): no outlines, and each note's switch stays faint until you reach for it */
+.originals .note.off { outline: none; }
+.originals .note.off .switch { opacity: 0.2; }
+.originals .note.off .switch:is(:hover, :focus-visible) { opacity: 1; }
 .note.asking { box-shadow: 0 0 0 2px var(--ink); }
 
 /* Editing a note in place */

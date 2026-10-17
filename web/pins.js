@@ -172,9 +172,23 @@ function summarise(doc, targets, verdict) {
   const concerns = targets.flatMap((t) => t.pins).filter((p) => p.kind === "concern").length;
   head.insertAdjacentHTML("beforeend", `
     <div class="pins-summary">
-      <p class="pins-counts"><b>Agent-reviewed</b> · ${targets.length} ${what} · ${concerns} ${concerns === 1 ? "concern" : "concerns"}</p>
+      <p class="pins-counts"><b>Agent-reviewed</b> · ${targets.length} ${what} · ${concerns} ${concerns === 1 ? "concern" : "concerns"}
+        <button class="toggle-notes pins-toggle"></button></p>
       ${verdict ? `<p class="pins-verdict">${esc(verdict)}</p>` : ""}
     </div>`);
+  const toggle = head.querySelector(".pins-toggle");
+  const show = (on) => {
+    if (!on) closePin();
+    doc.classList.toggle("pins-hidden", !on);
+    toggle.textContent = on ? "Hide pins" : "Show pins";
+    toggle.setAttribute("aria-pressed", String(!on));
+  };
+  toggle.addEventListener("click", () => {
+    const on = doc.classList.contains("pins-hidden");
+    show(on);
+    remember("pinsHidden", !on);
+  });
+  show(!recall("pinsHidden"));
 }
 
 document.addEventListener("click", closePin);
