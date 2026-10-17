@@ -9,7 +9,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from .schemas import ArxivPaper, PageSummary, Paper, Pitch
+from .schemas import ArxivPaper, GraphicalAbstract, PageSummary, Paper, Pitch
 
 DB_PATH = os.environ.get("PAPERS_DB", Path(__file__).parent.parent / "papers.db")  # override for tests/demos
 
@@ -19,6 +19,7 @@ conn.execute("CREATE TABLE IF NOT EXISTS papers (id INTEGER PRIMARY KEY, url TEX
 if "pdf" not in [col[1] for col in conn.execute("PRAGMA table_info(papers)")]:  # databases from before PDFs were kept
     conn.execute("ALTER TABLE papers ADD COLUMN pdf BLOB")
 conn.execute("CREATE TABLE IF NOT EXISTS summaries (paper_id INTEGER, page INTEGER, data TEXT, PRIMARY KEY (paper_id, page))")
+conn.execute("CREATE TABLE IF NOT EXISTS abstracts (paper_id INTEGER PRIMARY KEY, data TEXT)")
 conn.execute("CREATE TABLE IF NOT EXISTS pitches (arxiv_id TEXT PRIMARY KEY, data TEXT)")
 # listed: came from a daily listing (rather than fetched by id, like your own older papers), so it's in a day's feed
 conn.execute("CREATE TABLE IF NOT EXISTS arxiv_papers (id TEXT PRIMARY KEY, listed INTEGER, data TEXT)")
@@ -68,6 +69,7 @@ def delete(paper_id: int) -> bool:
     with lock, conn:
         cur = conn.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
         conn.execute("DELETE FROM summaries WHERE paper_id = ?", (paper_id,))
+        conn.execute("DELETE FROM abstracts WHERE paper_id = ?", (paper_id,))
     return cur.rowcount > 0
 
 
@@ -83,6 +85,17 @@ def get_summary(paper_id: int, page: int) -> PageSummary | None:
 def save_summary(paper_id: int, page: int, summary: PageSummary) -> None:
     with lock, conn:
         conn.execute("INSERT OR REPLACE INTO summaries VALUES (?, ?, ?)", (paper_id, page, summary.model_dump_json()))
+
+
+def get_abstract(paper_id: int) -> GraphicalAbstract | None:
+    with lock:
+        row = conn.execute("SELECT data FROM abstracts WHERE paper_id = ?", (paper_id,)).fetchone()
+    return GraphicalAbstract.model_validate_json(row[0]) if row else None
+
+
+def save_abstract(paper_id: int, abstract: GraphicalAbstract) -> None:
+    with lock, conn:
+        conn.execute("INSERT OR REPLACE INTO abstracts VALUES (?, ?)", (paper_id, abstract.model_dump_json()))
 
 
 def get_pitches(arxiv_ids: list[str]) -> dict[str, Pitch]:

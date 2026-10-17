@@ -7,6 +7,8 @@
 const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38";
 const NOTE_PAD = 4; // PDF points of breathing room around a paragraph's box
 const MAX_FONT = 0.024; // largest note font, as a fraction of the page width
+const MIN_FONT = { summary: 12, figure: 14, aside: 12 }; // px; below this a note grows past its box instead
+const MAX_GAP = 0.03; // vertical gap (fraction of page height) that splits a note's text into separate boxes
 
 let pdfjsLib;
 async function loadPdf(url) {
@@ -36,8 +38,14 @@ async function renderReader(container, paperId, p) {
   );
   pages.forEach((el) => seen.observe(el));
 
+  // Highlight text (in a note or the original) to ask about it; see chat.js.
+  enableAsk(container, paperId);
+
   // Re-fit note text once the handwriting font arrives and whenever the page width changes.
-  const refit = () => container.querySelectorAll(".note:not(.part)").forEach(fit);
+  const refit = () => {
+    container.querySelectorAll(".pdf-page").forEach((el) => el.style.setProperty("--scale-factor", el.clientWidth / el.pageWidth));
+    container.querySelectorAll(".note:not(.part)").forEach(fit);
+  };
   document.fonts.load('1em "xkcd"').then(refit);
   let pending;
   new ResizeObserver(() => {
@@ -50,21 +58,25 @@ function pageView(paperId, page, i, pdf) {
   const el = document.createElement("section");
   const onPdf = pdf && page.width;
   el.className = onPdf ? "page pdf-page" : "page text-page";
+  el.dataset.page = i;
+  el.paperId = paperId;
   if (onPdf) {
+    el.pageWidth = page.width;
     el.style.aspectRatio = `${page.width} / ${page.height}`;
-    el.innerHTML = `<canvas></canvas>`;
+    // The canvas shows the page; the invisible text layer on top makes its text selectable.
+    el.innerHTML = `<canvas></canvas><div class="textLayer"></div>`;
   } else {
     el.innerHTML = page.blocks.map((b) => `<div class="block"><p>${esc(b.text)}</p></div>`).join("");
   }
   el.insertAdjacentHTML("beforeend", `<div class="page-status"></div>`);
 
   el.load = async () => {
-    if (onPdf) drawPdfPage(el.querySelector("canvas"), pdf, i);
+    if (onPdf) drawPdfPage(el, pdf, i);
     const status = el.querySelector(".page-status");
     status.textContent = "writing notes…";
     try {
       const summary = await api(`/papers/${paperId}/pages/${i}/summary`);
-      summary.notes.forEach((n) => addNote(el, page, n, onPdf));
+      summary.notes.forEach((n, k) => addNote(el, page, n, k, onPdf));
       status.textContent = "";
     } catch (e) {
       status.innerHTML = `notes failed <button>retry</button>`;
@@ -74,62 +86,136 @@ function pageView(paperId, page, i, pdf) {
   return el;
 }
 
-async function drawPdfPage(canvas, pdf, i) {
+async function drawPdfPage(el, pdf, i) {
   const page = await pdf.getPage(i + 1);
-  const scale = (canvas.parentElement.clientWidth / page.getViewport({ scale: 1 }).width) * (window.devicePixelRatio || 1);
-  const viewport = page.getViewport({ scale });
+  const cssScale = el.clientWidth / page.getViewport({ scale: 1 }).width;
+  const viewport = page.getViewport({ scale: cssScale * (window.devicePixelRatio || 1) });
+  const canvas = el.querySelector("canvas");
   canvas.width = viewport.width;
   canvas.height = viewport.height;
-  await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+  el.style.setProperty("--scale-factor", cssScale);
+  const textLayer = new pdfjsLib.TextLayer({
+    textContentSource: page.streamTextContent(),
+    container: el.querySelector(".textLayer"),
+    viewport: page.getViewport({ scale: cssScale }),
+  });
+  await Promise.all([page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise, textLayer.render()]);
 }
 
-function addNote(el, page, n, onPdf) {
+function addNote(el, page, n, index, onPdf) {
   const note = document.createElement("div");
-  note.className = "note";
+  note.className = `note ${n.kind}`;
   note.innerHTML = `
     <button class="switch" title="Show original" aria-pressed="true"></button>
-    <div class="note-body">
-      ${n.heading ? `<div class="note-heading">${esc(n.heading)}</div>` : ""}
-      ${n.bullets.length ? `<ul>${n.bullets.map((b) => `<li>${esc(b)}</li>`).join("")}</ul>` : ""}
-    </div>`;
+    ${n.kind === "aside" ? "" : `<button class="edit" title="Edit note">✎</button>`}
+    <div class="note-body"></div>`;
+  note.data = n;
+  note.index = index;
   note.parts = [];
+  fillNote(note, n);
   note.querySelector(".switch").onclick = () => setNote(note, note.classList.contains("off"));
+  note.querySelector(".edit")?.addEventListener("click", () => editNote(note));
 
-  if (onPdf) {
-    // One box per column the run touches: the largest carries the note, the others are plain washes that switch with it.
-    const [main, ...rest] = columnBoxes(page, n.first, n.last).sort((a, b) => area(b) - area(a));
-    place(note, main, page);
-    el.append(note);
-    for (const box of rest) {
-      const part = document.createElement("div");
-      part.className = "note part";
-      place(part, box, page);
-      el.append(part);
-      note.parts.push(part);
-    }
-  } else {
-    // Wrap the covered blocks so the note can lie over all of them.
-    const blocks = [...el.querySelectorAll(".block")].slice(n.first, n.last + 1);
-    const group = document.createElement("div");
-    group.className = "block-group";
-    blocks[0].before(group);
-    group.append(...blocks, note);
+  // A note's text can sit in several places (both columns, either side of a figure). The largest place carries the
+  // note; the others get a matching blurred patch that switches with it.
+  const [main, ...rest] = onPdf ? pdfBoxes(page, n.blocks).sort((a, b) => area(b) - area(a)) : textGroups(el, n.blocks);
+  for (const box of rest) {
+    const part = document.createElement("div");
+    part.className = `note ${n.kind} part`;
+    part.main = note;
+    onPdf ? (place(part, box, page), el.append(part)) : box.append(part);
+    note.parts.push(part);
   }
+  onPdf ? (place(note, main, page), el.append(note)) : main.append(note);
   fit(note);
 }
 
-// Bounding box of blocks first..last in each column, so a note never straddles a two-column layout.
-// Column logic mirrors two_columns()/column() in backend/app/summarize.py.
-function columnBoxes(page, first, last) {
-  const cols = twoColumns(page);
-  const boxes = new Map();
-  for (const b of page.blocks.slice(first, last + 1)) {
-    const col = cols ? columnOf(b, page) : "all";
-    const [x0, y0, x1, y1] = b.bbox;
-    const r = boxes.get(col);
-    boxes.set(col, r ? [Math.min(r[0], x0), Math.min(r[1], y0), Math.max(r[2], x1), Math.max(r[3], y1)] : [x0, y0, x1, y1]);
+// (Re)write a note's text, e.g. after the tutor in chat.js adds to it.
+function fillNote(note, n) {
+  const bullets = n.bullets.length ? `<ul>${n.bullets.map((b) => `<li>${esc(b)}</li>`).join("")}</ul>` : "";
+  note.querySelector(".note-body").innerHTML = `${n.heading ? `<div class="note-heading">${esc(n.heading)}</div>` : ""}${bullets}`;
+  note.data = n;
+  if (note.isConnected) fit(note);
+}
+
+// Edit a note in place: the first click makes its title and bullets editable (Enter adds a bullet, Escape cancels),
+// the second saves.
+async function editNote(note) {
+  const body = note.querySelector(".note-body");
+  const button = note.querySelector(".edit");
+  if (!note.classList.contains("editing")) {
+    setNote(note, true);
+    if (!body.querySelector(".note-heading")) body.insertAdjacentHTML("afterbegin", `<div class="note-heading"></div>`);
+    if (!body.querySelector("li")) body.insertAdjacentHTML("beforeend", `<ul><li></li></ul>`);
+    note.classList.add("editing");
+    body.contentEditable = "true";
+    body.onkeydown = (e) => e.key === "Escape" && (stopEditing(note), fillNote(note, note.data));
+    body.focus();
+    Object.assign(button, { textContent: "✓", title: "Save note" });
+    return;
   }
-  return [...boxes.values()];
+  const heading = body.querySelector(".note-heading")?.textContent.trim() || null;
+  const bullets = [...body.querySelectorAll("li")].map((li) => li.textContent.trim()).filter(Boolean);
+  const updated = { ...note.data, heading, bullets };
+  stopEditing(note);
+  const page = note.closest(".page");
+  try {
+    fillNote(note, await api(`/papers/${page.paperId}/pages/${page.dataset.page}/notes/${note.index}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updated),
+    }));
+  } catch (e) {
+    fillNote(note, note.data);
+    alert(`Couldn't save the note: ${e.message}`);
+  }
+}
+
+function stopEditing(note) {
+  const body = note.querySelector(".note-body");
+  body.contentEditable = "false";
+  note.classList.remove("editing");
+  Object.assign(note.querySelector(".edit"), { textContent: "✎", title: "Edit note" });
+}
+
+// Boxes around a note's blocks on a PDF page: blocks stack into one box while they're in the same column, overlap
+// horizontally and follow without a big vertical gap (a figure, usually, which should stay visible).
+function pdfBoxes(page, blocks) {
+  const cols = twoColumns(page);
+  const boxes = [];
+  let cur;
+  for (const i of [...blocks].sort((a, b) => a - b)) {
+    const b = page.blocks[i];
+    const [x0, y0, x1, y1] = b.bbox;
+    const col = cols ? columnOf(b, page) : "all";
+    const stacks = cur && cur.col === col && x0 < cur.r[2] && x1 > cur.r[0] && y0 - cur.r[3] < MAX_GAP * page.height;
+    if (stacks) {
+      cur.r = [Math.min(cur.r[0], x0), Math.min(cur.r[1], y0), Math.max(cur.r[2], x1), Math.max(cur.r[3], y1)];
+    } else {
+      boxes.push((cur = { col, r: [x0, y0, x1, y1] }));
+    }
+  }
+  return boxes.map((b) => b.r);
+}
+
+// On text pages, wrap each run of consecutive blocks in a group the note (or a patch) can lie over; largest first.
+function textGroups(el, blocks) {
+  const all = [...el.querySelectorAll(".block")];
+  const runs = [];
+  for (const i of [...blocks].sort((a, b) => a - b)) {
+    const run = runs.at(-1);
+    run && run.at(-1) === i - 1 ? run.push(i) : runs.push([i]);
+  }
+  const size = (run) => run.reduce((n, i) => n + all[i].textContent.length, 0);
+  return runs
+    .sort((a, b) => size(b) - size(a))
+    .map((run) => {
+      const group = document.createElement("div");
+      group.className = "block-group";
+      all[run[0]].before(group);
+      group.append(...run.map((i) => all[i]));
+      return group;
+    });
 }
 
 function twoColumns(page) {
@@ -166,13 +252,16 @@ function setAllNotes(container, on) {
   container.querySelectorAll(".note:not(.part)").forEach((n) => setNote(n, on));
 }
 
-// Largest font (up to MAX_FONT of the page width) at which the note fits in the space of the text it covers.
+// Largest font (up to MAX_FONT of the page width) at which the note fits in the space of the text it covers. If it
+// doesn't fit even at its kind's MIN_FONT (a figure note on a short caption, say), let the note grow downwards.
 function fit(note) {
   const body = note.querySelector(".note-body");
-  const pageWidth = note.closest(".page").clientWidth;
-  let size = Math.max(12, pageWidth * MAX_FONT);
+  if (note.classList.contains("aside")) return (body.hidden = note.clientWidth < 120); // too narrow for a label: just blur
+  const overflows = () => note.scrollHeight > note.clientHeight || note.scrollWidth > note.clientWidth;
+  const min = MIN_FONT[[...note.classList].find((c) => c in MIN_FONT)] ?? 12;
+  note.classList.remove("grow");
+  let size = Math.max(min, note.closest(".page").clientWidth * MAX_FONT);
   body.style.fontSize = `${size}px`;
-  while (size > 8 && (body.scrollHeight > note.clientHeight || body.scrollWidth > note.clientWidth)) {
-    body.style.fontSize = `${--size}px`;
-  }
+  while (size > min && overflows()) body.style.fontSize = `${--size}px`;
+  note.classList.toggle("grow", overflows());
 }

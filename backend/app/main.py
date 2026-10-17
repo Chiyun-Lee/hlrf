@@ -2,7 +2,8 @@ import base64
 import logging
 import threading
 from collections import defaultdict
-from contextlib import ExitStack
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack, contextmanager
 from datetime import date
 from pathlib import Path
 from typing import Literal
@@ -12,8 +13,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import db, extract, feed, llm, pins, pitch, summarize
-from .schemas import PageSummary, PaperPins, Pitch
+from . import abstract as graphical
+from . import db, extract, feed, llm, pins, pitch, proof, quiz, summarize, tutor
+from .schemas import GraphicalAbstract, Note, PageSummary, Paper, PaperPins, Pitch, Proof, Quiz
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
@@ -63,7 +65,13 @@ def get_paper(paper_id: int) -> dict:
     paper = db.get(paper_id)
     if not paper:
         raise HTTPException(404)
-    return {**paper.model_dump(), "has_pdf": db.has_pdf(paper_id)}
+    return {**paper.model_dump(), "has_pdf": db.has_pdf(paper_id), "has_abstract": db.get_abstract(paper_id) is not None}
+
+
+@app.delete("/papers/{paper_id}", status_code=204)
+def delete_paper(paper_id: int) -> None:
+    if not db.delete(paper_id):
+        raise HTTPException(404)
 
 
 @app.get("/papers/{paper_id}/pdf")
@@ -77,37 +85,144 @@ def get_pdf(paper_id: int) -> Response:
 summary_locks = defaultdict(threading.Lock)  # one generation per page, even if the viewer asks twice
 
 
-@app.get("/papers/{paper_id}/pages/{page}/summary")
-def get_summary(paper_id: int, page: int) -> PageSummary:
+def page_summary(paper_id: int, paper: Paper, page: int) -> PageSummary:
     """Notes for one page (0-indexed), generated on first request and cached."""
     with summary_locks[paper_id, page]:
         if summary := db.get_summary(paper_id, page):
             return summary
-        paper = db.get(paper_id)
-        if not paper or not 0 <= page < len(paper.pages):
-            raise HTTPException(404)
-        try:
-            summary = summarize.summarize_page(paper, page)
-        except Exception as e:
-            logging.exception("summary failed for paper %s page %s", paper_id, page)
-            raise HTTPException(500, f"{type(e).__name__}: {e}")
+        summary = summarize.summarize_page(paper, page, db.get_pdf(paper_id))
         db.save_summary(paper_id, page, summary)
         return summary
+
+
+def all_summaries(paper_id: int, paper: Paper) -> list[PageSummary]:
+    """Notes for every page. A page whose notes can't be written is left empty (and retried next time) rather than
+    sinking whatever needs the whole paper."""
+
+    def one(i: int) -> PageSummary:
+        try:
+            return page_summary(paper_id, paper, i)
+        except Exception:
+            logging.exception("notes for paper %s page %s failed; leaving it out", paper_id, i)
+            return PageSummary(notes=[])
+
+    with ThreadPoolExecutor(8) as pool:
+        return list(pool.map(one, range(len(paper.pages))))
+
+
+def get_paper_or_404(paper_id: int) -> Paper:
+    if not (paper := db.get(paper_id)):
+        raise HTTPException(404)
+    return paper
+
+
+@contextmanager
+def claude_errors(what: str):
+    """Turn a failed Claude call into a 500 whose detail the reader shows, and log it."""
+    try:
+        yield
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.exception("%s failed", what)
+        raise HTTPException(500, f"{type(e).__name__}: {e}") from e
+
+
+@app.get("/papers/{paper_id}/pages/{page}/summary")
+def get_summary(paper_id: int, page: int) -> PageSummary:
+    paper = get_paper_or_404(paper_id)
+    if not 0 <= page < len(paper.pages):
+        raise HTTPException(404)
+    with claude_errors(f"summary of paper {paper_id} page {page}"):
+        return page_summary(paper_id, paper, page)
 
 
 @app.get("/papers/{paper_id}/pins")
 def get_pins(paper_id: int) -> PaperPins | None:
     """Methods pins for the paper's figures and tables (app/pins.py); null when it has none."""
-    paper = db.get(paper_id)
-    if not paper:
-        raise HTTPException(404)
-    return pins.for_paper(paper)
+    return pins.for_paper(get_paper_or_404(paper_id))
 
 
-@app.delete("/papers/{paper_id}", status_code=204)
-def delete_paper(paper_id: int) -> None:
-    if not db.delete(paper_id):
+@app.get("/papers/{paper_id}/abstract")
+def get_abstract(paper_id: int) -> GraphicalAbstract:
+    if not (abstract := db.get_abstract(paper_id)):
         raise HTTPException(404)
+    return abstract
+
+
+@app.post("/papers/{paper_id}/abstract")
+def make_abstract(paper_id: int) -> GraphicalAbstract:
+    """(Re)make the graphical abstract from the notes, writing notes for any pages not read yet."""
+    paper = get_paper_or_404(paper_id)
+    with claude_errors(f"abstract of paper {paper_id}"):
+        abstract = graphical.make(paper, all_summaries(paper_id, paper), db.get_pdf(paper_id))
+    db.save_abstract(paper_id, abstract)
+    return abstract
+
+
+@app.post("/papers/{paper_id}/quiz")
+def make_quiz(paper_id: int) -> Quiz:
+    """A fresh quiz each time, from the notes and the graphical abstract."""
+    paper = get_paper_or_404(paper_id)
+    if not (abstract := db.get_abstract(paper_id)):
+        raise HTTPException(409, "Make the graphical abstract first.")
+    with claude_errors(f"quiz for paper {paper_id}"):
+        return quiz.make(paper, all_summaries(paper_id, paper), abstract)
+
+
+class ProofRequest(BaseModel):
+    proof: str  # the question's note id, "p<page>n<note>"
+    question: str
+    answer: str
+    explanation: str = ""
+
+
+@app.post("/papers/{paper_id}/proof")
+def show_proof(paper_id: int, req: ProofRequest) -> Proof:
+    """The original paragraph behind a quiz answer, with the key words picked out, plus its note."""
+    paper = get_paper_or_404(paper_id)
+    try:
+        p, k = summarize.parse_note_id(req.proof)
+        note = db.get_summary(paper_id, p).notes[k]
+    except (ValueError, IndexError, AttributeError):
+        raise HTTPException(404, "No such note")
+    with claude_errors(f"proof for paper {paper_id}"):
+        return proof.find(paper, p, note, req.question, req.answer, req.explanation)
+
+
+class AskRequest(BaseModel):
+    note: int | None = None  # index of the note over the highlighted passage, if any
+    selection: str
+    messages: list[dict]  # the chat so far: [{"role": "user"|"assistant", "content": str}], ending with the user
+
+
+@app.post("/papers/{paper_id}/pages/{page}/ask")
+def ask(paper_id: int, page: int, req: AskRequest) -> dict:
+    """Answer a question about a highlighted passage. Returns the reply, and the note if the tutor updated it."""
+    paper, summary = db.get(paper_id), db.get_summary(paper_id, page)
+    if not paper or not 0 <= page < len(paper.pages):
+        raise HTTPException(404)
+    note = summary.notes[req.note] if summary and req.note is not None and 0 <= req.note < len(summary.notes) else None
+    with claude_errors(f"tutor for paper {paper_id} page {page}"):
+        reply = tutor.answer(paper, page, note, req.selection, req.messages)
+    updated = None
+    if note and reply.update_note and (reply.bullets or reply.heading):
+        note.bullets = reply.bullets or note.bullets
+        note.heading = reply.heading or note.heading
+        db.save_summary(paper_id, page, summary)
+        updated = note
+    return {"reply": reply.reply, "updated_note": updated}
+
+
+@app.put("/papers/{paper_id}/pages/{page}/notes/{index}")
+def put_note(paper_id: int, page: int, index: int, note: Note) -> Note:
+    """Replace one note (the reader uses this to undo a tutor's edit)."""
+    summary = db.get_summary(paper_id, page)
+    if not summary or not 0 <= index < len(summary.notes):
+        raise HTTPException(404)
+    summary.notes[index] = note
+    db.save_summary(paper_id, page, summary)
+    return note
 
 
 # --- For you: each day's arXiv papers ranked for you (app/feed.py) ---
