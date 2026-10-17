@@ -131,6 +131,7 @@ function wirePointer(page) {
   let live = null; // {stroke, path} being drawn, {erased} while erasing, {lasso, path} while lassoing
   let scrolling = null;
   let penSeen = false;
+  let typeAt = null; // where a text box is to open
 
   const toPage = (e) => {
     const r = svg.getBoundingClientRect();
@@ -145,7 +146,7 @@ function wirePointer(page) {
     const state = ink;
     const editing = document.activeElement?.closest?.(".ink-text");
     if (editing) return editing.blur(); // a click off a text box being typed in just finishes it
-    if (state.tool === "text") return editText(state, page, null, toPage(e));
+    if (state.tool === "text") return (typeAt = toPage(e)); // the box opens on click (below)
     capturePointer(svg, e);
     if (state.tool === "eraser") {
       live = { id: e.pointerId, erased: { strokes: [], texts: [] } };
@@ -193,6 +194,15 @@ function wirePointer(page) {
   };
   svg.addEventListener("pointerup", end);
   svg.addEventListener("pointercancel", end);
+
+  // A text box opens and takes the keyboard on click rather than on pointerdown: some browsers (Safari, Firefox) move
+  // the focus as the button goes down, which would close a box opened then, and iPad Safari only shows the keyboard
+  // for focus given in a click.
+  svg.addEventListener("click", () => {
+    const at = typeAt;
+    typeAt = null;
+    if (at && ink.tool === "text") editText(ink, page, null, at);
+  });
 }
 
 function addPoint(live, e, toPage) {
@@ -298,11 +308,7 @@ function showText(state, t) {
   t.el = el;
   page.el.append(el);
   placeText(t, page);
-  el.addEventListener("pointerdown", (e) => {
-    if (state.tool !== "text" || el.isContentEditable) return;
-    e.preventDefault();
-    editText(state, page, t);
-  });
+  el.addEventListener("click", () => state.tool === "text" && !el.isContentEditable && editText(state, page, t));
 }
 
 function placeText(t, page) {
