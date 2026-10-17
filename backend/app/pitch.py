@@ -33,6 +33,7 @@ def write(papers: list[dict], profile: dict) -> list[Pitch]:
         f"The researcher follows {', '.join(profile.get('categories', []))} on arXiv.\n\n"
         f"Their own papers:\n{listing(profile.get('mine', []))}\n\n"
         f"Papers they recently marked relevant:\n{listing(profile.get('liked', []))}\n\n"
+        f"Recent papers in their Zotero library:\n{listing(profile.get('zotero', []))}\n\n"
         "Today's papers to summarise:\n\n" + "\n\n".join(today)
     )
     wanted = {p["id"] for p in papers}

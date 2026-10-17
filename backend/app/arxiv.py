@@ -18,6 +18,14 @@ ARXIV = "{http://arxiv.org/schemas/atom}"
 EASTERN = ZoneInfo("America/New_York")
 DEADLINE = clock(14, 0)  # arXiv's daily submission deadline, US Eastern, Monday to Friday
 PAGE = 500
+# New-style (2410.01234) and old-style (hep-th/0101001) arXiv identifiers, without the version. Old-style ids need a
+# real archive name, so that other links' paths (inspirehep.net/authors/1960608) aren't read as ids.
+OLD_ARCHIVES = (
+    "acc-phys|adap-org|alg-geom|ao-sci|astro-ph|atom-ph|bayes-an|chao-dyn|chem-ph|cmp-lg|comp-gas|cond-mat|cs|dg-ga|"
+    "funct-an|gr-qc|hep-ex|hep-lat|hep-ph|hep-th|math|math-ph|mtrl-th|nlin|nucl-ex|nucl-th|patt-sol|physics|plasm-ph|"
+    "q-alg|q-bio|quant-ph|solv-int|supr-con"
+)
+ID = rf"\d{{4}}\.\d{{4,5}}|(?:{OLD_ARCHIVES})(?:\.[A-Z]{{2}})?/\d{{7}}"
 http = httpx.Client(timeout=60, follow_redirects=True, headers={"User-Agent": "human-pretraining/0.1 (For you tab)"})
 
 
@@ -102,9 +110,13 @@ def recent(categories: list[str], days: int, max_results: int = 2000) -> list[Ar
 
 
 def by_ids(ids: list[str]) -> list[ArxivPaper]:
-    """The latest version of each paper; ids arXiv doesn't know are left out."""
-    if not ids:
-        return []
-    resp = http.get(API, params={"id_list": ",".join(ids), "max_results": len(ids)})
-    resp.raise_for_status()
-    return parse(resp.content)
+    """The latest version of each paper, 100 per request; ids arXiv doesn't know are left out."""
+    papers: list[ArxivPaper] = []
+    for start in range(0, len(ids), 100):
+        if start:
+            time.sleep(3)  # arXiv asks API clients to wait three seconds between requests
+        batch = ids[start : start + 100]
+        resp = http.get(API, params={"id_list": ",".join(batch), "max_results": len(batch)})
+        resp.raise_for_status()
+        papers += parse(resp.content)
+    return papers

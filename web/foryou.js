@@ -13,6 +13,7 @@ const ORDER = {
   newest: "newest first",
 };
 let mineFlash = null; // set before re-rendering after an add or remove: keeps Your papers open, with this message
+let zoteroFlash = null; // the same for the Zotero library panel
 
 async function forYou(day) {
   let feed;
@@ -56,6 +57,7 @@ async function forYou(day) {
       </header>
       <section class="fy-goal" aria-live="polite"></section>
       ${minePanel(feed.mine, feed.profiles)}
+      ${zoteroPanel(feed.zotero)}
       <p class="fy-notice"${feed.notice ? "" : " hidden"}>${esc(feed.notice ?? "")}</p>
       ${picks.length ? `<ol class="fy-picks">${picks.map((p) => paperEntry(p, true)).join("")}</ol>` : ""}
       ${rest.length && picks.length ? `<h2 class="fy-rest">The rest of ${state.weekday}’s listing</h2>` : ""}
@@ -67,6 +69,7 @@ async function forYou(day) {
   renderGoal(root);
   root.addEventListener("click", (e) => onClick(root, e));
   wireMine(root);
+  wireZotero(root);
   // The keys act on the selected paper: start on the first one still to sort.
   setCurrent(root, root.querySelector(".fy-paper:not(.sorted)") ?? root.querySelector(".fy-paper"), false);
   window.MathJax?.typesetPromise?.([root]);
@@ -391,6 +394,50 @@ function wireMine(root) {
       await api(`/feed/mine/${button.dataset.id}`, { method: "DELETE" });
       mineFlash = "";
     }
+    route();
+  });
+}
+
+// --- your Zotero library: papers you keep count as ones you're interested in ---
+
+function zoteroPanel(z) {
+  let status = "";
+  if (z?.missing) status = `Can’t read <code>${esc(z.path)}</code> any more (${esc(z.missing)}). Link the export again, or unlink.`;
+  else if (z) status = `Linked: <code>${esc(z.path)}</code>, ${z.on_arxiv} of ${z.entries} entries on arXiv, re-read whenever the file changes.`;
+  return `
+    <details class="fy-mine fy-zotero"${zoteroFlash === null ? "" : " open"}>
+      <summary>Zotero library ${z?.on_arxiv != null ? `<span class="fy-mine-count">${z.on_arxiv}</span>` : ""}</summary>
+      <p class="fy-mine-help">For you also learns from the papers you keep in Zotero. Export your library as BibTeX (File › Export Library…, or Better BibTeX’s export with “Keep updated” on, so new papers arrive by themselves) and paste the file’s path.</p>
+      ${status ? `<p class="fy-linked">${status} <button type="button" class="fy-remove" data-unlink-zotero>Unlink</button></p>` : ""}
+      <form class="fy-mine-add">
+        <input name="path" placeholder="~/Zotero/My Library.bib" aria-label="Path to your Zotero BibTeX export" autocomplete="off" />
+        <button type="submit" class="fy-btn fy-primary">${z ? "Link another" : "Link"}</button>
+      </form>
+      <p class="fy-mine-msg" role="status">${esc(zoteroFlash ?? "")}</p>
+    </details>`;
+}
+
+function wireZotero(root) {
+  zoteroFlash = null;
+  const panel = root.querySelector(".fy-zotero");
+  const message = panel.querySelector(".fy-mine-msg");
+  panel.querySelector("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const button = e.target.querySelector("button");
+    button.disabled = true;
+    message.textContent = "Reading the export and fetching its papers from arXiv…";
+    try {
+      const res = await api("/feed/zotero", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ path: e.target.path.value }) });
+      zoteroFlash = `Linked. ${res.on_arxiv} of its ${res.entries} entries are on arXiv and now shape your ranking.`;
+      route();
+    } catch (err) {
+      message.textContent = err.message;
+      button.disabled = false;
+    }
+  });
+  panel.querySelector("[data-unlink-zotero]")?.addEventListener("click", async () => {
+    await api("/feed/zotero", { method: "DELETE" });
+    zoteroFlash = "Unlinked. Your Zotero papers no longer shape the ranking.";
     route();
   });
 }

@@ -266,6 +266,21 @@ def unlink_profile(url: str) -> None:
     feed.unlink(url)
 
 
+class ZoteroRequest(BaseModel):
+    path: str  # where Zotero's BibTeX export is on this machine, e.g. ~/Zotero/My Library.bib
+
+
+@app.post("/feed/zotero")
+def link_zotero(req: ZoteroRequest) -> dict | None:
+    """Your Zotero library, from its BibTeX export: re-read whenever the file changes."""
+    return feed_call(feed.link_zotero, req.path)
+
+
+@app.delete("/feed/zotero", status_code=204)
+def unlink_zotero() -> None:
+    feed.unlink_zotero()
+
+
 class SummariesRequest(BaseModel):
     papers: list[dict]  # {id, title, abstract, reasons} as GET /feed returned them
 

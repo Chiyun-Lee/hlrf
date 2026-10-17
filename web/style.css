@@ -155,6 +155,8 @@ input[type="search"] { width: 100%; box-sizing: border-box; padding: 10px 12px; 
 .fy-mine-add input { flex: 1; min-width: 0; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font: inherit; }
 .fy-mine-add input:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
 .fy-mine-msg { min-height: 1.4em; margin: 6px 0 8px; color: var(--muted); }
+.fy-mine + .fy-zotero { margin-top: -20px; }
+.fy-linked code { font-size: 12px; overflow-wrap: anywhere; }
 
 /* Papers */
 .fy-picks, .fy-list { list-style: none; margin: 0; padding: 0; }
