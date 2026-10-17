@@ -614,9 +614,11 @@ def options(run: Run, resume: str | None = None, **extra):
 
 
 def check_init(run: Run, init: dict) -> None:
-    """Stop at once, not hours later, if Claude Code didn't find our skills (a broken link, say)."""
+    """Stop at once, not hours later, if Claude Code didn't find our skills (a broken link, say) or tools."""
     if missing := [s for s in skills_for(run.depth) if s not in init.get("skills", [])]:
         raise Failed(f"Claude Code didn't find the {' and '.join(missing)} skill in {run.work / '.claude' / 'skills'}.")
+    if "mcp__review__stage" not in init.get("tools", []):
+        raise Failed("Claude Code didn't load the review's stage and check_pins tools.")
 
 
 async def converse(run: Run, prompt: str, resume: str | None = None, **extra):
