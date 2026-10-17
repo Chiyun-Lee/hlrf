@@ -1,6 +1,7 @@
 {
   "arxiv_id": "2506.22373",
-  "reviewed": "AI review of arXiv:2506.22373v2: the authors' notebooks re-run and the claims tested through paper2agent, 17 Oct 2026",
+  "reviewed": "Agent review of arXiv:2506.22373v2 with paper2agent, 17 Oct 2026: agents re-ran the authors' notebooks and tested the claims with the verified code",
+  "verdict": "The authors' code reproduces the Table II means, but the central claim doesn't hold: fitted the same way, a plain ΛCDM universe gives the same j₀ ≈ 2.3 and an equal or larger tension. The analysis measures the series' truncation error; it doesn't test ΛCDM.",
   "targets": [
     {
       "label": "Table I",
@@ -24,10 +25,10 @@
       "bbox": [105, 52, 511, 418],
       "pins": [
         {
-          "kind": "method",
-          "title": "The model",
-          "basic": "Describes the expansion with four numbers (speed, slow-down, jerk, snap) instead of a physical theory.",
-          "researcher": "4th-order Taylor series of a(t) in y = z/(1+z), with distances from Eqs. 9–12. The code is correct, but printed Eq. 9 has a sign typo: +(5/3)q₀j₀, not −.",
+          "kind": "data",
+          "title": "Model curves only",
+          "basic": "No measurements: the curves show how far the shortcut strays from a plain ΛCDM universe. Its plotting code isn't in the repository.",
+          "researcher": "2nd-, 3rd- and 4th-order y-series vs flat ΛCDM (H₀ = 70, Ωm = 0.3, so q₀ = −0.55, j₀ = 1, s₀ = −0.35), up to each probe's top data redshift (dashed). No plotting code in the repository; the review rebuilt the curves.",
           "evidence": "Tested"
         },
         {
@@ -35,6 +36,13 @@
           "title": "Too blurry",
           "basic": "The four-number shortcut is too blurry for data this sharp: it finds a jerk near 2 even in a plain ΛCDM universe.",
           "researcher": "At the ΛCDM truth the series misses the Lyα D_V point by 7.9% (9.7σ). Noiseless ΛCDM mocks give a best-fit j₀ ≈ 2.3 and a spurious 2.8–5.4σ tension.",
+          "evidence": "Tested"
+        },
+        {
+          "kind": "method",
+          "title": "The model",
+          "basic": "Describes the expansion with four numbers (speed, slow-down, jerk, snap) instead of a physical theory.",
+          "researcher": "4th-order Taylor series of a(t) in y = z/(1+z), with distances from Eqs. 9–12. The code is correct, but printed Eq. 9 has a sign typo: +(5/3)q₀j₀, not −.",
           "evidence": "Tested"
         }
       ]
@@ -46,10 +54,10 @@
       "bbox": [115, 52, 501, 434],
       "pins": [
         {
-          "kind": "method",
-          "title": "The fit",
-          "basic": "Tries millions of combinations of the four numbers and keeps the ones that match the data.",
-          "researcher": "emcee, 100 walkers × 21,000 steps, flat priors (H₀ 50–90 in the code but 50–70 in the paper; s₀ −10 to 10). No seed and no convergence checks.",
+          "kind": "data",
+          "title": "Authors' MCMC chains",
+          "basic": "Likely values from the authors' fits to DESI, alone and with three supernova sets. Re-running their code gives the same averages.",
+          "researcher": "Posteriors from the four emcee notebooks (DESI DR2 BAO alone, + Union3, + Pantheon+, + DESY5). Re-run at the authors' settings, they reproduce the Table II means (j₀ 1.77, 1.93, 1.96, 2.05 vs 2.04); the 2σ limits agree only roughly.",
           "evidence": "Code re-run"
         },
         {
@@ -58,6 +66,13 @@
           "basic": "One of the four numbers presses against the edge of its allowed range, and that edge decides the answer.",
           "researcher": "The best-fit s₀ is 10.0, the prior bound, in every fit, and corr(j₀, s₀) ≈ 0.99. Widening the priors moves DESY5 from 5.4σ to 3.7σ by the paper's own measure.",
           "evidence": "Tested"
+        },
+        {
+          "kind": "method",
+          "title": "The fit",
+          "basic": "Tries millions of combinations of the four numbers and keeps the ones that match the data.",
+          "researcher": "emcee, 100 walkers × 21,000 steps, flat priors (H₀ 50–90 in the code but 50–70 in the paper; s₀ −10 to 10). No seed and no convergence checks.",
+          "evidence": "Code re-run"
         }
       ]
     },

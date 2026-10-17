@@ -21,15 +21,12 @@ async function loadPdf(url) {
 
 // Renders paper `p` (from GET /papers/:id) into `container`.
 async function renderReader(container, paperId, p) {
-  const pins = api(`/papers/${paperId}/pins`).catch(() => null); // extras: the paper reads fine without them
   const pdf = p.has_pdf ? await loadPdf(`/papers/${paperId}/pdf`) : null;
   const pages = p.pages.map((page, i) => pageView(paperId, page, i, pdf));
   container.replaceChildren(...pages);
 
-  // Methods pins on figures and tables (pins.js). Their boxes are in PDF points, so they need the PDF page.
-  pins.then((found) =>
-    found?.targets.forEach((t) => pages[t.page]?.classList.contains("pdf-page") && addPins(pages[t.page], p.pages[t.page], t, found.reviewed)),
-  );
+  // Methods pins from an agent review on figures and tables (pins.js).
+  showPins(container, paperId, p);
 
   // Draw pages (and fetch their notes) shortly before they scroll into view.
   const seen = new IntersectionObserver(
