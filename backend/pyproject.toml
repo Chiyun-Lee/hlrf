@@ -14,6 +14,11 @@ dependencies = [
     "tzdata",  # arXiv's listing deadline is in US Eastern time; Windows has no time-zone database
 ]
 
+[project.optional-dependencies]
+claude-code = [
+    "claude-agent-sdk>=0.2.168",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

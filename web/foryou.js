@@ -198,7 +198,7 @@ async function loadSummaries(root, papers) {
     const notice = root.querySelector(".fy-notice");
     notice.textContent =
       e.detail?.reason === "no_key"
-        ? "Summaries need ANTHROPIC_API_KEY in backend/.env. Showing abstracts until then."
+        ? `${e.message} Showing abstracts until then.`
         : `Couldn't write summaries (${e.message}). Showing abstracts instead.`;
     notice.hidden = false;
     papers.forEach((p) => showSummary(root, p, null));

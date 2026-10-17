@@ -159,8 +159,8 @@ def feed_summaries(req: SummariesRequest) -> dict[str, Pitch]:
         found = db.get_pitches(list(papers))
         missing = [p for i, p in papers.items() if i not in found]
         if missing:
-            if not (llm.client.api_key or llm.client.auth_token):
-                raise HTTPException(503, {"reason": "no_key", "message": "Add ANTHROPIC_API_KEY to backend/.env for summaries."})
+            if reason := llm.ready():
+                raise HTTPException(503, {"reason": "no_key", "message": reason})
             try:
                 written = pitch.write(missing, feed.profile())
             except Exception as e:
