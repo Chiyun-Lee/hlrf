@@ -1,5 +1,8 @@
 const out = document.getElementById("out")!;
 const LIBRARY = "http://localhost:8000/";
+// Chrome refuses an extension message over 64 MiB, which a big PDF in base64 can pass, so the save request goes to the
+// background in pieces of at most this many characters (JSON escaping can grow one, but not past the limit).
+const PIECE = 8_000_000;
 
 // Runs inside the page, with the user's cookies, so it works on sites that block the backend (Cloudflare,
 // PMC's download check, institutional access). Must be self-contained: Chrome serialises it into the tab.
@@ -25,7 +28,8 @@ async function readPage() {
       }
     } catch {}
   }
-  return { meta, html: document.documentElement.outerHTML, pdf };
+  // With the PDF the backend doesn't need the page itself, and leaving it out keeps the request small.
+  return { meta, html: pdf ? null : document.documentElement.outerHTML, pdf };
 }
 
 async function main() {
@@ -55,7 +59,12 @@ async function main() {
       .executeScript({ target: { tabId: tab.id! }, func: readPage })
       .then(([r]) => r.result)
       .catch(() => ({}));
-    chrome.runtime.sendMessage({ type: "save", url: tab.url, page });
+    const body = JSON.stringify({ url: tab.url, ...page });
+    const n = Math.max(1, Math.ceil(body.length / PIECE));
+    for (let i = 0; i < n; i++) {
+      const ok = await chrome.runtime.sendMessage({ type: "save-part", url: tab.url, i, n, part: body.slice(i * PIECE, (i + 1) * PIECE) });
+      if (!ok) return Object.assign(out, { className: "status error", textContent: "Hmm, that didn't work: the paper didn't reach the extension. Try again." });
+    }
   });
 }
 
