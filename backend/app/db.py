@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from .schemas import GraphicalAbstract, PageSummary, Paper
+from .schemas import GraphicalAbstract, PageSummary, Paper, SummaryCards
 
 DB_PATH = os.environ.get("PAPERS_DB", Path(__file__).parent.parent / "papers.db")  # override for tests/demos
 
@@ -18,6 +18,7 @@ if "pdf" not in [col[1] for col in conn.execute("PRAGMA table_info(papers)")]:  
     conn.execute("ALTER TABLE papers ADD COLUMN pdf BLOB")
 conn.execute("CREATE TABLE IF NOT EXISTS summaries (paper_id INTEGER, page INTEGER, data TEXT, PRIMARY KEY (paper_id, page))")
 conn.execute("CREATE TABLE IF NOT EXISTS abstracts (paper_id INTEGER PRIMARY KEY, data TEXT)")
+conn.execute("CREATE TABLE IF NOT EXISTS cards (paper_id INTEGER PRIMARY KEY, data TEXT)")
 
 
 def save(paper: Paper, pdf: bytes | None = None) -> int:
@@ -57,6 +58,7 @@ def delete(paper_id: int) -> bool:
         cur = conn.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
         conn.execute("DELETE FROM summaries WHERE paper_id = ?", (paper_id,))
         conn.execute("DELETE FROM abstracts WHERE paper_id = ?", (paper_id,))
+        conn.execute("DELETE FROM cards WHERE paper_id = ?", (paper_id,))
     return cur.rowcount > 0
 
 
@@ -83,3 +85,17 @@ def get_abstract(paper_id: int) -> GraphicalAbstract | None:
 def save_abstract(paper_id: int, abstract: GraphicalAbstract) -> None:
     with lock, conn:
         conn.execute("INSERT OR REPLACE INTO abstracts VALUES (?, ?)", (paper_id, abstract.model_dump_json()))
+
+
+def get_cards(paper_id: int) -> SummaryCards | None:
+    with lock:
+        row = conn.execute("SELECT data FROM cards WHERE paper_id = ?", (paper_id,)).fetchone()
+    try:
+        return SummaryCards.model_validate_json(row[0]) if row else None
+    except ValidationError:  # saved in an older format; remake
+        return None
+
+
+def save_cards(paper_id: int, cards: SummaryCards) -> None:
+    with lock, conn:
+        conn.execute("INSERT OR REPLACE INTO cards VALUES (?, ?)", (paper_id, cards.model_dump_json()))

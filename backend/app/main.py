@@ -12,8 +12,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import abstract as graphical
-from . import db, extract, proof, quiz, summarize, tutor
-from .schemas import GraphicalAbstract, Note, PageSummary, Paper, Proof, Quiz
+from . import cards, db, extract, proof, quiz, summarize, tutor
+from .schemas import GraphicalAbstract, Note, PageSummary, Paper, Proof, Quiz, SummaryCards
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
@@ -63,7 +63,12 @@ def get_paper(paper_id: int) -> dict:
     paper = db.get(paper_id)
     if not paper:
         raise HTTPException(404)
-    return {**paper.model_dump(), "has_pdf": db.has_pdf(paper_id), "has_abstract": db.get_abstract(paper_id) is not None}
+    return {
+        **paper.model_dump(),
+        "has_pdf": db.has_pdf(paper_id),
+        "has_abstract": db.get_abstract(paper_id) is not None,
+        "has_cards": db.get_cards(paper_id) is not None,
+    }
 
 
 @app.delete("/papers/{paper_id}", status_code=204)
@@ -150,6 +155,23 @@ def make_abstract(paper_id: int) -> GraphicalAbstract:
         abstract = graphical.make(paper, all_summaries(paper_id, paper), db.get_pdf(paper_id))
     db.save_abstract(paper_id, abstract)
     return abstract
+
+
+@app.get("/papers/{paper_id}/cards")
+def get_cards(paper_id: int) -> SummaryCards:
+    if not (deck := db.get_cards(paper_id)):
+        raise HTTPException(404)
+    return deck
+
+
+@app.post("/papers/{paper_id}/cards")
+def make_cards(paper_id: int) -> SummaryCards:
+    """(Re)make the summary cards from the notes and the paper's text, writing notes for any pages not read yet."""
+    paper = get_paper_or_404(paper_id)
+    with claude_errors(f"cards for paper {paper_id}"):
+        deck = cards.make(paper, all_summaries(paper_id, paper), db.get_pdf(paper_id))
+    db.save_cards(paper_id, deck)
+    return deck
 
 
 @app.post("/papers/{paper_id}/quiz")
