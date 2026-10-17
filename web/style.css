@@ -423,8 +423,8 @@ body.chat-open .review-dock { right: 396px; }
   box-sizing: border-box; background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 28px rgba(31, 47, 122, 0.16); }
 body.chat-open .review-panel { max-width: calc(100vw - 412px); }
 .review-panel:focus { outline: none; }
-.review-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 8px 0 14px; }
-.review-head h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.review-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 0 14px; }
+.review-head h2 { flex: 1; margin: 0; font-size: 14px; font-weight: 600; }
 .review-fold { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--muted);
   font: 18px/1 system-ui, -apple-system, sans-serif; cursor: pointer; }
 .review-fold:hover { background: #f1f0ec; color: var(--text); }
@@ -434,8 +434,7 @@ body.chat-open .review-panel { max-width: calc(100vw - 412px); }
 @keyframes review-wait { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 .review-dock.failed .review-bar > div { background: var(--warn); }
 .review-dock.stopped .review-bar > div { background: #b9bdcc; }
-.review-now { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 8px 14px 0; }
-.review-now .review-headline { font-weight: 600; }
+.review-panel .review-headline { margin: 8px 14px 0; font-weight: 600; }
 .review-clock { color: var(--muted); font-variant-numeric: tabular-nums; }
 .review-result { margin: 4px 14px 0; }
 .review-result:empty { display: none; }
@@ -457,6 +456,7 @@ body.chat-open .review-panel { max-width: calc(100vw - 412px); }
 /* The live feed of what the agent does, newest at the bottom */
 .review-log { position: relative; display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--border); }
 .review-log:has(.review-feed:empty) { display: none; }
+.review-dock.done .review-log { margin-top: 10px; } /* no stages above it then */
 .review-feed { min-height: 0; max-height: 220px; overflow-y: auto; overscroll-behavior: contain; margin: 0; padding: 6px 14px 8px;
   list-style: none; font-size: 12px; line-height: 1.4; }
 .ev { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; padding: 2px 0; }

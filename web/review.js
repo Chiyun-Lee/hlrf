@@ -1,9 +1,9 @@
 // Agent review: paper2agent reviews the paper on the backend (POST /papers/:id/review). It turns the paper and its code
 // into tools, re-runs the authors' code, tests the claims and writes a review, then pins Data provenance and
 // Agent-reviewed concerns on the figures and tables. A full review takes 30 min to 2 h, so it runs in the background:
-// the paper's "Agent review" button starts one, and a panel in the corner follows it live (progress, the stages and
-// each step the agent takes). The run lives on the server: leaving the paper only stops the checking, and coming back
-// picks it up again.
+// the paper's "Run paper2agent review" button starts one, and a panel in the corner follows it live (progress, the
+// stages and each step the agent takes). The run lives on the server: leaving the paper only stops the checking, and
+// coming back picks it up again.
 
 const REVIEW_DEPTHS = {
   full: {
@@ -170,8 +170,9 @@ function openChooser(r) {
   const b = r.button.getBoundingClientRect();
   const left = Math.min(b.right - box.offsetWidth, document.documentElement.clientWidth - box.offsetWidth - 8);
   Object.assign(box.style, { left: `${Math.max(8, left) + scrollX}px`, top: `${b.bottom + scrollY + 6}px` });
+  box.scrollIntoView({ block: "nearest" }); // in a short window it can reach below the screen
   r.button.setAttribute("aria-expanded", "true");
-  box.querySelector("input:checked").focus();
+  box.querySelector("input:checked").focus({ preventScroll: true });
 }
 
 function closeChooser(r) {
@@ -245,9 +246,9 @@ function openPanel(r, unfold = true) {
     r.dock = document.createElement("div");
     r.dock.innerHTML = `
       <section class="review-panel" aria-labelledby="review-title" tabindex="-1">
-        <div class="review-head"><h2 id="review-title"></h2><button class="review-fold"></button></div>
+        <div class="review-head"><h2 id="review-title"></h2><span class="review-clock"></span><button class="review-fold"></button></div>
         <div class="review-bar" role="progressbar" aria-label="Review progress" aria-valuemin="0" aria-valuemax="100"><div></div></div>
-        <div class="review-now"><span class="review-headline"></span><span class="review-clock"></span></div>
+        <p class="review-headline"></p>
         <div class="review-result"></div>
         <ol class="review-stages" aria-label="Stages"></ol>
         <div class="review-log"><button class="review-latest" hidden>Jump to latest ↓</button></div>
