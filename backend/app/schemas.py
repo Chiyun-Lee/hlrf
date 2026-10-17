@@ -110,9 +110,10 @@ class Pitches(BaseModel):
 
 
 class ArxivPaper(BaseModel):
-    """A new paper as For you stores and ranks it: from arXiv (app/arxiv.py) or bioRxiv (app/biorxiv.py)."""
+    """A paper as For you stores and ranks it: from arXiv (app/arxiv.py) or bioRxiv (app/biorxiv.py), or one of your
+    published papers that isn't on arXiv (source "doi", app/published.py)."""
 
-    id: str  # arXiv: without the version, 2410.01234 or hep-th/0101001; bioRxiv: the DOI
+    id: str  # arXiv: without the version, 2410.01234 or hep-th/0101001; bioRxiv and published papers: the DOI
     version: int = 1
     title: str
     abstract: str
@@ -123,18 +124,22 @@ class ArxivPaper(BaseModel):
     comment: str | None = None
     journal_ref: str | None = None
     doi: str | None = None
-    source: Literal["arxiv", "biorxiv"] = "arxiv"
+    source: Literal["arxiv", "biorxiv", "doi"] = "arxiv"
 
     @property
     def abs_url(self) -> str:
         if self.source == "biorxiv":
             return f"https://www.biorxiv.org/content/{self.id}v{self.version}"
+        if self.source == "doi":
+            return f"https://doi.org/{self.id}"
         return f"https://arxiv.org/abs/{self.id}"
 
     @property
     def pdf_url(self) -> str:
         if self.source == "biorxiv":
             return f"{self.abs_url}.full.pdf"
+        if self.source == "doi":
+            return self.abs_url  # the publisher's page links its PDF
         return f"https://arxiv.org/pdf/{self.id}"
 
 

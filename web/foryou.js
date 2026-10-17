@@ -460,12 +460,12 @@ function minePanel(mine, profiles) {
       <p class="fy-mine-help">${
         mine.length
           ? "For you ranks each day’s papers and writes “Why you’d care” from these, plus what you like and save."
-          : "Paste your INSPIRE profile link and For you loads your papers, then ranks each day’s papers by your work and says why each one matters to you. arXiv ids or links work too."
+          : "Paste your INSPIRE profile link and For you loads your papers, then ranks each day’s papers by your work and says why each one matters to you. arXiv ids, DOIs and links to your published papers work too."
       }</p>
       ${linked}
       ${list}
       <form class="fy-mine-add">
-        <input name="text" placeholder="inspirehep.net/authors/…, or arXiv ids like 2207.01501" aria-label="Your INSPIRE profile link, or arXiv ids" autocomplete="off" />
+        <input name="text" placeholder="inspirehep.net/authors/…, arXiv ids, DOIs or journal links" aria-label="Your INSPIRE profile link, arXiv ids, or DOIs or links of your published papers" autocomplete="off" />
         <button type="submit" class="fy-btn fy-primary">Add papers</button>
       </form>
       <p class="fy-mine-msg" role="status">${esc(mineFlash ?? "")}</p>
@@ -481,7 +481,7 @@ function wireMine(root) {
     const button = e.target.querySelector("button");
     button.disabled = true;
     const text = e.target.text.value;
-    message.textContent = /inspirehep/i.test(text) ? "Reading your INSPIRE profile…" : "Looking them up on arXiv…";
+    message.textContent = /inspirehep\.net\/authors/i.test(text) ? "Reading your INSPIRE profile…" : "Looking them up…";
     try {
       const res = await api("/feed/mine", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ text }) });
       const notes = [];
@@ -490,6 +490,7 @@ function wireMine(root) {
         notes.push(`Found ${res.from_profile} of your papers on your ${res.profile} profile${off}. New ones are added each day.`);
       }
       if (res.unknown.length) notes.push(`arXiv doesn’t know ${res.unknown.join(", ")}.`);
+      notes.push(...publishedNotes(res.published));
       mineFlash = notes.join(" ");
       await rerank(); // with your papers
     } catch (err) {
@@ -504,11 +505,23 @@ function wireMine(root) {
       await api(`/feed/profiles?url=${encodeURIComponent(button.dataset.unlink)}`, { method: "DELETE" });
       mineFlash = "Unlinked. The papers it added stay; remove any you don’t want.";
     } else {
-      await api(`/feed/mine/${button.dataset.id}`, { method: "DELETE" });
+      await api(`/feed/mine/${encodeURIComponent(button.dataset.id)}`, { method: "DELETE" }); // DOIs can hold ( ) ; #
       mineFlash = "";
     }
     rerank();
   });
+}
+
+// What happened to pasted DOIs and journal links (backend/app/published.py).
+function publishedNotes(p) {
+  if (!p) return [];
+  const notes = [];
+  const papers = (n) => `${n} published paper${n === 1 ? "" : "s"}`;
+  if (p.added) notes.push(`Added ${papers(p.added)}${p.on_arxiv ? `, ${p.on_arxiv} as ${p.on_arxiv === 1 ? "its" : "their"} arXiv version` : ""}.`);
+  if (p.not_found.length) notes.push(`Couldn’t find ${p.not_found.join(", ")}.`);
+  if (p.unreadable.length) notes.push(`Couldn’t read the DOI from ${p.unreadable.join(", ")}: paste the paper’s DOI instead.`);
+  if (p.unreachable.length) notes.push(`Couldn’t look up ${p.unreachable.join(", ")} just now. Try again in a moment.`);
+  return notes;
 }
 
 // --- your Zotero library: papers you keep count as ones you're interested in ---
