@@ -14,8 +14,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import abstract as graphical
-from . import db, extract, feed, llm, pitch, proof, quiz, summarize, tutor
-from .schemas import GraphicalAbstract, Note, PageSummary, Paper, Pitch, Proof, Quiz
+from . import db, extract, feed, llm, pins, pitch, proof, quiz, summarize, tutor
+from .schemas import GraphicalAbstract, Note, PageSummary, Paper, PaperPins, Pitch, Proof, Quiz
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
@@ -135,6 +135,12 @@ def get_summary(paper_id: int, page: int) -> PageSummary:
         raise HTTPException(404)
     with claude_errors(f"summary of paper {paper_id} page {page}"):
         return page_summary(paper_id, paper, page)
+
+
+@app.get("/papers/{paper_id}/pins")
+def get_pins(paper_id: int) -> PaperPins | None:
+    """Methods pins for the paper's figures and tables (app/pins.py); null when it has none."""
+    return pins.for_paper(get_paper_or_404(paper_id))
 
 
 @app.get("/papers/{paper_id}/abstract")
