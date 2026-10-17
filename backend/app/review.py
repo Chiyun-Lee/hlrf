@@ -442,7 +442,7 @@ async def run_review(paper_id: int, depth: str) -> None:
         return
     n = sum(len(t.pins) for t in found.targets)
     run.event("done", f"Saved {n} pins on {len(found.targets)} figures and tables")
-    update(paper_id, state="done", finished_at=now(), stage=len(run.stages), pins=n, verdict=found.verdict)
+    update(paper_id, state="done", finished_at=now(), stage=len(run.stages), pins=n, verdict=getattr(found, "verdict", None))
 
 
 async def detached(paper_id: int, depth: str) -> None:
@@ -520,10 +520,10 @@ establish); ## Main problems (numbered, most important first, each with its evid
 ## Bottom line (what holds, what doesn't, what would settle it); ## Evidence (paths in the work dir, or links, behind
 each point).
 
-pins.json: use the paper-pins skill, covering every target in targets.json. Set `reviewed` to what the pins rest on
-(e.g. "AI review of arXiv:<id>: the authors' code re-run and the claims tested, <date>") and `verdict` to the review's
-bottom line in one sentence. Check it with the `check_pins` tool (not a command line) and fix it until check_pins
-returns ok. Then end with the verdict.
+pins.json: write it with the paper-pins skill, giving every target in targets.json its pins. Set `reviewed` to what
+the pins rest on (what was done, then the date) and `verdict` to the review's bottom line in 1-2 sentences. The
+skill's `python -m app.pins` commands are for interactive use: here targets.json lists the targets, and the
+`check_pins` tool checks pins.json. Fix pins.json until check_pins returns ok, then end with the verdict.
 """
 
 
@@ -676,7 +676,7 @@ def shown_path(path: str, work: Path) -> str:
 
 
 def tool_line(name: str, args: dict, work: Path) -> str | None:
-    """What a tool call does, in a few words; None for the stage tool, which adds its own "stage" event."""
+    """What a tool call does, in a few words, or None to leave it out."""
     path = shown_path(args.get("file_path") or args.get("notebook_path") or args.get("path") or "", work)
     match name:
         case "Bash":
@@ -701,7 +701,7 @@ def tool_line(name: str, args: dict, work: Path) -> str | None:
         case "TodoWrite":
             doing = [t for t in args.get("todos", []) if t.get("status") == "in_progress"]
             return one_line(doing[0].get("activeForm") or doing[0].get("content", ""), 200) if doing else None
-        case "mcp__review__stage":
+        case "mcp__review__stage" | "ToolSearch":  # the stage tool adds its own event; ToolSearch only loads tools
             return None
         case "mcp__review__check_pins":
             return "Checking the pins"
