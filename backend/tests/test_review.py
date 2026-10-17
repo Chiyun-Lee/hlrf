@@ -274,6 +274,18 @@ def test_live_view_lines(tmp_path, monkeypatch):
     assert review.describe(done, work) == [("done", "Agent finished after 1 h 52 min, 143 turns, $41.50")]
     monkeypatch.setattr(llm, "BACKEND", "claude-code")  # on the subscription: no cost
     assert review.describe(done, work) == [("done", "Agent finished after 1 h 52 min, 143 turns")]
+    helper = sdk.TaskNotificationMessage(subtype="task_notification", data={}, task_id="a", status="completed",
+                                         output_file="o", summary="Re-ran desidr2.ipynb: matches Table II", uuid="u", session_id="s")
+    assert review.describe(helper, work) == [("text", "Helper completed: Re-ran desidr2.ipynb: matches Table II")]
+    resets = int(review.ts("2026-10-17T18:00:00+00:00"))
+
+    def limit(status):
+        return sdk.RateLimitEvent(sdk.RateLimitInfo(status=status, resets_at=resets), uuid="u", session_id="s")
+
+    at = f"(resets at {review.datetime.fromtimestamp(resets):%H:%M})"
+    assert review.describe(limit("rejected"), work) == [("error", f"Claude usage limit reached {at}")]
+    assert review.describe(limit("allowed_warning"), work) == [("text", f"Close to the Claude usage limit {at}")]
+    assert review.describe(limit("allowed"), work) == []
 
 
 def test_stage_and_check_pins_tools(reviews):

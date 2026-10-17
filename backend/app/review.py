@@ -140,7 +140,7 @@ def update(paper_id: int, **changes) -> dict:
     """Change status.json, atomically (a temp file renamed over it), so a reader never sees half of it."""
     st = {**(read(paper_id) or {}), **changes}
     path = folder(paper_id) / "status.json"
-    tmp = path.with_name(f"status.{os.getpid()}.tmp")
+    tmp = path.with_name(f"status.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.write_text(json.dumps(st))
     os.replace(tmp, path)
     return st
@@ -626,9 +626,10 @@ async def converse(run: Run, prompt: str, resume: str | None = None, **extra):
     result = None
     try:
         async for message in query(prompt=prompt, options=options(run, resume, **extra)):
-            log.info("%r", message)
             if isinstance(message, SystemMessage) and message.subtype == "init":
                 check_init(run, message.data)
+            if not (isinstance(message, SystemMessage) and message.subtype == "thinking_tokens"):  # one a second
+                log.info("%r", message)
             sub = getattr(message, "parent_tool_use_id", None) is not None
             for kind, text in describe(message, run.work):
                 run.event(kind, text, sub)
@@ -721,7 +722,8 @@ def duration(seconds: float) -> str:
 
 def describe(message, work: Path) -> list[tuple[str, str]]:
     """The live view's lines for one message from Claude Code, as (kind, text). Tool results only when they failed."""
-    from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolResultBlock, ToolUseBlock, UserMessage
+    from claude_agent_sdk import (AssistantMessage, RateLimitEvent, ResultMessage, TaskNotificationMessage, TextBlock,
+                                  ToolResultBlock, ToolUseBlock, UserMessage)
 
     lines = []
     if isinstance(message, AssistantMessage):
@@ -737,6 +739,12 @@ def describe(message, work: Path) -> list[tuple[str, str]]:
         if llm.BACKEND != "claude-code" and message.total_cost_usd:  # on the subscription the cost isn't billed
             text += f", ${message.total_cost_usd:.2f}"
         lines.append(("done", text))
+    elif isinstance(message, TaskNotificationMessage):  # a helper working in the background is done
+        lines.append(("text", one_line(f"Helper {message.status}: {message.summary}")))
+    elif isinstance(message, RateLimitEvent) and (limit := message.rate_limit_info).status != "allowed":
+        resets = f" (resets at {datetime.fromtimestamp(limit.resets_at):%H:%M})" if limit.resets_at else ""
+        lines.append(("error", f"Claude usage limit reached{resets}") if limit.status == "rejected"
+                     else ("text", f"Close to the Claude usage limit{resets}"))
     return lines
 
 
