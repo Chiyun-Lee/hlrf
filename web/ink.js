@@ -74,13 +74,18 @@ function toolbar(state) {
   bar.innerHTML = `
     <button class="ink-write" aria-pressed="false" title="Write or draw on the paper">✎ Write</button>
     <span class="ink-tools" hidden>
-      ${PENS.map((c, k) => `<button data-tool="pen" data-color="${c}" title="Pen" aria-pressed="${k === 0}"><i style="background:${c}"></i></button>`).join("")}
-      <button data-tool="highlighter" data-color="${HIGHLIGHTER}" title="Highlighter" aria-pressed="false"><i class="hl" style="background:${HIGHLIGHTER}"></i></button>
+      <button data-tool="pen" title="Pen" aria-pressed="true">
+        <svg viewBox="0 0 16 16" width="15" height="15"><path d="M11.5 1.8 14.2 4.5 5.4 13.3 2 14 2.7 10.6Z M9.8 3.5 12.5 6.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      </button>
+      <button data-tool="highlighter" title="Highlighter" aria-pressed="false"><i class="hl" style="background:${HIGHLIGHTER}"></i></button>
       <button data-tool="text" title="Text box: click the page to type" aria-pressed="false">T</button>
       <button data-tool="lasso" title="Lasso: circle ink, text or cards to move or delete them" aria-pressed="false">
         <svg viewBox="0 0 16 16" width="15" height="15"><ellipse cx="8" cy="7" rx="6.5" ry="4.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.5 2"/><path d="M5 11.5 q-1 2.5 1.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
       </button>
       <button data-tool="eraser" title="Eraser" aria-pressed="false">⌫</button>
+      <span class="ink-colors" role="group" aria-label="Colour for the pen and text">
+        ${PENS.map((c, k) => `<button class="ink-color" data-color="${c}" title="Colour" aria-pressed="${k === 0}"><i style="background:${c}"></i></button>`).join("")}
+      </span>
       <button class="ink-undo" title="Undo (⌘Z)">↶</button>
       <button class="ink-redo" title="Redo (⇧⌘Z)">↷</button>
     </span>
@@ -93,16 +98,26 @@ function toolbar(state) {
     state.container.classList.toggle("writing", on);
     if (!on) (document.activeElement?.blur(), select(state, null));
   };
-  bar.querySelectorAll("[data-tool]").forEach((b) =>
+  const useTool = (tool) => {
+    state.container.classList.remove(`tool-${state.tool}`);
+    state.tool = tool;
+    state.container.classList.add(`tool-${tool}`);
+    bar.querySelectorAll("[data-tool]").forEach((o) => o.setAttribute("aria-pressed", o.dataset.tool === tool));
+    if (tool !== "lasso") select(state, null);
+  };
+  bar.querySelectorAll("[data-tool]").forEach((b) => b.addEventListener("click", () => useTool(b.dataset.tool)));
+  // A colour is for the pen and for text: picking one keeps the pen or text tool (and recolours a text box being
+  // typed in), and switches any other tool to the pen.
+  bar.querySelectorAll(".ink-color").forEach((b) =>
     b.addEventListener("click", () => {
-      state.container.classList.remove(`tool-${state.tool}`);
-      state.tool = b.dataset.tool;
-      state.container.classList.add(`tool-${state.tool}`);
-      if (b.dataset.color) state.color = b.dataset.color;
-      bar.querySelectorAll("[data-tool]").forEach((o) => o.setAttribute("aria-pressed", o === b));
-      if (state.tool !== "lasso") select(state, null);
+      state.color = b.dataset.color;
+      bar.querySelectorAll(".ink-color").forEach((o) => o.setAttribute("aria-pressed", o === b));
+      const typing = document.activeElement?.closest?.(".ink-text");
+      if (typing) typing.style.color = state.color;
+      else if (state.tool !== "text") useTool("pen");
     }),
   );
+  bar.addEventListener("mousedown", (e) => e.preventDefault()); // clicking the toolbar leaves a text box being typed in focused
   bar.querySelector(".ink-undo").onclick = () => undo(state);
   bar.querySelector(".ink-redo").onclick = () => redo(state);
   bar.querySelector(".ink-ask").onclick = () => ask(state);
@@ -160,7 +175,8 @@ function wirePointer(page) {
       live = { id: e.pointerId, lasso: [toPage(e)], path };
       return;
     }
-    const stroke = { id: newId(), page: page.i, tool: state.tool, color: state.color, width: WIDTH[state.tool], points: [] };
+    const color = state.tool === "highlighter" ? HIGHLIGHTER : state.color;
+    const stroke = { id: newId(), page: page.i, tool: state.tool, color, width: WIDTH[state.tool], points: [] };
     const path = document.createElementNS(SVG, "path");
     svg.append(path);
     live = { id: e.pointerId, stroke, path };
@@ -321,7 +337,7 @@ function editText(state, page, t, at) {
   let el = t?.el;
   if (!t) {
     const [x, y] = at;
-    const draft = { x, y: y - TEXT_SIZE * 0.7, w: Math.max(60, Math.min(TEXT_WIDTH, page.width - x - GAP)), color: state.color === HIGHLIGHTER ? PENS[0] : state.color };
+    const draft = { x, y: y - TEXT_SIZE * 0.7, w: Math.max(60, Math.min(TEXT_WIDTH, page.width - x - GAP)), color: state.color };
     el = document.createElement("div");
     el.className = "ink-text";
     page.el.append(el);
@@ -333,20 +349,25 @@ function editText(state, page, t, at) {
   el.focus();
   getSelection().selectAllChildren(el);
   getSelection().collapseToEnd();
-  el.onkeydown = (e) => e.key === "Escape" && (e.preventDefault(), el.blur());
+  // (Not el.onkeydown = (e) => e.key === "Escape" && …: a handler property returning false cancels every other key.)
+  const onKey = (e) => {
+    if (e.key === "Escape" && !e.isComposing) (e.preventDefault(), el.blur());
+  };
+  el.addEventListener("keydown", onKey);
   el.addEventListener(
     "blur",
     () => {
       el.contentEditable = "false";
-      el.onkeydown = null;
+      el.removeEventListener("keydown", onKey);
       const text = el.innerText.replace(/\n+$/, "").trim();
+      const color = el.style.color ? rgbToHex(el.style.color) : state.color; // the palette may have recoloured it
       if (!t) {
         el.remove();
-        if (text) record(state, { add: { texts: [{ id: newId(), page: page.i, ...el.draft, text }] } });
+        if (text) record(state, { add: { texts: [{ id: newId(), page: page.i, ...el.draft, color, text }] } });
       } else if (!text) {
         record(state, { remove: { texts: [t] } });
-      } else if (text !== t.text) {
-        record(state, { remove: { texts: [t] }, add: { texts: [{ ...plain(t), text }] } });
+      } else if (text !== t.text || color !== t.color) {
+        record(state, { remove: { texts: [t] }, add: { texts: [{ ...plain(t), text, color }] } });
       } else {
         el.textContent = t.text;
       }
@@ -761,6 +782,12 @@ function inPolygon([x, y], poly) {
     if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) isIn = !isIn;
   }
   return isIn;
+}
+
+// "rgb(31, 47, 122)" (how the browser reports a colour set as "#1f2f7a") → "#1f2f7a".
+function rgbToHex(c) {
+  const m = c.match(/\d+/g);
+  return c.startsWith("#") || !m ? c : `#${m.slice(0, 3).map((v) => (+v).toString(16).padStart(2, "0")).join("")}`;
 }
 
 const inside = ([x0, y0, x1, y1], [x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
