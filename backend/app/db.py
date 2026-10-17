@@ -9,7 +9,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from .schemas import ArxivPaper, GraphicalAbstract, PageSummary, Paper, Pitch
+from .schemas import ArxivPaper, GraphicalAbstract, PageSummary, Paper, Pitch, SummaryCards
 
 DB_PATH = os.environ.get("PAPERS_DB", Path(__file__).parent.parent / "papers.db")  # override for tests/demos
 
@@ -25,6 +25,7 @@ conn.execute("CREATE TABLE IF NOT EXISTS pitches (arxiv_id TEXT PRIMARY KEY, dat
 conn.execute("CREATE TABLE IF NOT EXISTS arxiv_papers (id TEXT PRIMARY KEY, listed INTEGER, data TEXT)")
 conn.execute("CREATE TABLE IF NOT EXISTS feed_signals (arxiv_id TEXT, kind TEXT, at TEXT, PRIMARY KEY (arxiv_id, kind))")
 conn.execute("CREATE TABLE IF NOT EXISTS feed_meta (key TEXT PRIMARY KEY, value TEXT)")
+conn.execute("CREATE TABLE IF NOT EXISTS cards (paper_id INTEGER PRIMARY KEY, data TEXT)")
 
 
 def save(paper: Paper, pdf: bytes | None = None) -> int:
@@ -70,6 +71,7 @@ def delete(paper_id: int) -> bool:
         cur = conn.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
         conn.execute("DELETE FROM summaries WHERE paper_id = ?", (paper_id,))
         conn.execute("DELETE FROM abstracts WHERE paper_id = ?", (paper_id,))
+        conn.execute("DELETE FROM cards WHERE paper_id = ?", (paper_id,))
     return cur.rowcount > 0
 
 
@@ -173,3 +175,17 @@ def get_meta(key: str) -> str | None:
 def set_meta(key: str, value: str) -> None:
     with lock, conn:
         conn.execute("INSERT OR REPLACE INTO feed_meta VALUES (?, ?)", (key, value))
+
+
+def get_cards(paper_id: int) -> SummaryCards | None:
+    with lock:
+        row = conn.execute("SELECT data FROM cards WHERE paper_id = ?", (paper_id,)).fetchone()
+    try:
+        return SummaryCards.model_validate_json(row[0]) if row else None
+    except ValidationError:  # saved in an older format; remake
+        return None
+
+
+def save_cards(paper_id: int, cards: SummaryCards) -> None:
+    with lock, conn:
+        conn.execute("INSERT OR REPLACE INTO cards VALUES (?, ?)", (paper_id, cards.model_dump_json()))

@@ -84,7 +84,7 @@ async function paper(id) {
         ${p.doi ? `<a href="https://doi.org/${esc(p.doi)}" target="_blank">DOI ${esc(p.doi)}</a>` : ""}
         ${p.arxiv_id ? `<a href="https://arxiv.org/abs/${esc(p.arxiv_id)}" target="_blank">arXiv ${esc(p.arxiv_id)}</a>` : ""}
         <button class="toggle-notes" id="toggle-notes">Show originals</button>
-        <button class="toggle-notes" id="abstract">${p.has_abstract ? "Graphical abstract" : "Done? Make graphical abstract"}</button>
+        <button class="toggle-notes" id="abstract">${p.has_abstract ? "Graphical abstract & cards" : "Done? Make graphical abstract & cards"}</button>
         <button class="toggle-notes quiz-button" id="quiz" ${p.has_abstract ? "" : "hidden"}>Quiz me ✦</button>
         <button class="delete" id="delete">Delete</button>
       </div>
@@ -102,7 +102,10 @@ async function paper(id) {
   abstractButton.addEventListener("click", () =>
     showAbstract(id, p.title, {
       make: !p.has_abstract,
-      onReady: () => ((p.has_abstract = true), (abstractButton.textContent = "Graphical abstract"), (quizButton.hidden = false)),
+      hasCards: p.has_cards,
+      onReady: () => (
+        (p.has_abstract = p.has_cards = true), (abstractButton.textContent = "Graphical abstract & cards"), (quizButton.hidden = false)
+      ),
     }),
   );
   quizButton.addEventListener("click", () => startQuiz(id));

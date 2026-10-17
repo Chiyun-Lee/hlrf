@@ -161,6 +161,67 @@ class GraphicalAbstract(BaseModel):
     figures: list[AbstractFigure]  # one or two key figures
 
 
+class Stat(BaseModel):
+    value: str  # a headline number as printed, e.g. "0.45%"
+    label: str  # what it is, a few words
+
+
+class CardStep(BaseModel):
+    title: str  # e.g. "Measure BAO with 2x the volume"
+    detail: str  # one line of specifics
+
+
+class Branch(BaseModel):
+    title: str
+    points: list[str]
+
+
+class EvidenceRow(BaseModel):
+    claim: str
+    evidence: str  # the experiment, dataset or figure/table that supports it
+
+
+class ChartItem(BaseModel):
+    label: str
+    value: float
+    low: float | None = None  # error bar / interval, when the paper gives one
+    high: float | None = None
+    printed: str  # the number exactly as printed in the paper, e.g. "0.2975 ± 0.0086"; checked against the text
+
+
+class Chart(BaseModel):
+    """A simple comparison redrawn from numbers the paper states (drawn as a dot plot by web/cards.js)."""
+
+    title: str
+    axis: str  # what the values are, with units
+    source: str  # where in the paper, e.g. "Table 4"
+    caption: str  # one line: what to notice
+    items: list[ChartItem]
+
+
+class CardFigure(BaseModel):
+    figure: str  # which figure note, as "p<page>n<note>"
+    callout: str  # what to notice
+    image: str | None = None  # filled in by the backend, as for AbstractFigure
+    width: float | None = None
+    height: float | None = None
+
+
+class SummaryCards(BaseModel):
+    """A deck of summary cards for the whole paper (rendered by web/cards.js under the graphical abstract)."""
+
+    tldr: str
+    stats: list[Stat]
+    flow: list[CardStep]  # question -> what they did -> evidence -> conclusion
+    topic: str  # a short name for the centre of the mind map
+    mindmap: list[Branch]
+    findings: list[str]
+    evidence: list[EvidenceRow]
+    caveats: list[str]
+    charts: list[Chart] = []
+    figures: list[CardFigure] = []
+
+
 class QuizQuestion(BaseModel):
     kind: Literal["choice", "blank"]  # blank: `prompt` has "___" and `options` is the word bank
     prompt: str

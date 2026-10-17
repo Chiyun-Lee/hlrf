@@ -11,8 +11,11 @@ const FLOW = {
 };
 const FONT_URL = "https://cdn.jsdelivr.net/gh/ipython/xkcd-font@master/xkcd-script/font/xkcd-script.woff";
 
-// Opens the abstract in an overlay. `make`: (re)generate it instead of loading the saved one.
-async function showAbstract(paperId, paperTitle, { make = false, onReady } = {}) {
+// Opens the abstract in an overlay, with the summary cards (cards.js) below it. `make`: (re)generate the abstract
+// instead of loading the saved one. `hasCards`: false makes the cards too, alongside the abstract.
+async function showAbstract(paperId, paperTitle, { make = false, hasCards = true, onReady } = {}) {
+  const deck = api(`/papers/${paperId}/cards`, hasCards ? undefined : { method: "POST" });
+  deck.catch(() => {}); // shown in the cards section
   const overlay = openOverlay(`<p class="overlay-status">${make ? "Reading every page and drawing your graphical abstract… (about a minute)" : "Loading…"}</p>`);
   let a;
   try {
@@ -30,7 +33,9 @@ async function showAbstract(paperId, paperTitle, { make = false, onReady } = {})
       <button data-act="quiz">Quiz me ✦</button>
       <button data-act="close" class="close" title="Close">×</button>
     </div>
-    <div class="abstract-slide">${abstractSvg(a, paperTitle)}</div>`;
+    <div class="abstract-slide">${abstractSvg(a, paperTitle)}</div>
+    <div class="cards-slot"></div>`;
+  showCards(overlay.querySelector(".cards-slot"), paperId, deck);
   overlay.querySelector(".overlay-tools").onclick = async (e) => {
     const act = e.target.dataset.act;
     if (act === "export") exportSvg(abstractSvg(a, paperTitle, await embeddedFont()), paperTitle);
