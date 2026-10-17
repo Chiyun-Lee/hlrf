@@ -3,16 +3,17 @@
 // what the review worries about (Agent-reviewed concern), then what was done (Method). A click opens a card in two
 // levels: a plain line in the doodle hand, then a precise line for researchers. One card is open at a time.
 //
-// Where the groups go: on wide screens in a rail in the margin beside the page, each level with its figure's top and
-// pushed down so none overlap (in the left margin when the chat covers the right one); without room for a rail, as a
-// compact group in the figure's top-right corner. Hovering or focusing a button outlines its figure on the page.
+// Where the groups go: in a rail in the margin beside the page, each level with its figure's top and pushed down so
+// none overlap (in the left margin when the chat covers the right one; with short kind names when the margin is
+// narrow). Without room for a rail, as a compact group in the figure's top-right corner. Hovering or focusing a
+// button outlines its figure on the page.
 
 const PIN_KINDS = { // in the order they're listed
   data: { glyph: "■", name: "Data provenance", short: "Data" },
   concern: { glyph: "▲", name: "Agent-reviewed concern", short: "Concern" },
   method: { glyph: "●", name: "Method", short: "Method" },
 };
-const RAIL = { min: 176, max: 216, gap: 16, edge: 8, stack: 12 }; // px: rail width, gap to the page and viewport edge, between groups
+const RAIL = { full: 176, short: 88, max: 216, card: 248, gap: 16, edge: 8, stack: 12 }; // px; card: narrowest card kept in the margin
 const TIGHT = 560; // px: pages narrower than this show short kind names in the corner groups
 let openPin = null; // {group, button, card}
 let pinsDoc = null; // the reader the pins are drawn in, for re-layout
@@ -84,10 +85,10 @@ function layoutPins(doc) {
   const column = groups[0].parentElement.getBoundingClientRect(); // every page shares the column
   const chat = document.querySelector(".chat")?.getBoundingClientRect();
   const right = chat && chat.left > column.left ? chat.left : document.documentElement.clientWidth; // a side chat covers the right
-  const room = { right: right - column.right, left: column.left };
-  const fits = (side) => room[side] >= RAIL.gap + RAIL.min + RAIL.edge;
-  const side = fits("right") ? "right" : fits("left") ? "left" : null;
-  const width = side && Math.min(RAIL.max, room[side] - RAIL.gap - RAIL.edge);
+  const room = { right: right - column.right - RAIL.gap - RAIL.edge, left: column.left - RAIL.gap - RAIL.edge };
+  const sides = ["right", "left"];
+  const side = sides.find((s) => room[s] >= RAIL.full) ?? sides.find((s) => room[s] >= RAIL.short);
+  const width = side && Math.min(RAIL.max, room[side]);
 
   let below = -Infinity; // bottom of the last rail group, from the top of the document
   for (const g of groups) {
@@ -96,7 +97,7 @@ function layoutPins(doc) {
     const [, y0, x1] = g.target.bbox;
     g.classList.toggle("rail", !!side);
     g.classList.toggle("corner", !side);
-    g.classList.toggle("tight", !side && el.clientWidth < TIGHT);
+    g.classList.toggle("short", side ? width < RAIL.full : el.clientWidth < TIGHT);
     if (side) {
       const pageTop = el.offsetTop + el.clientTop;
       const top = Math.max(pageTop + y0 * s, below + RAIL.stack);
@@ -120,10 +121,10 @@ function openPinCard(group, button, pin, reviewed) {
   card.setAttribute("aria-label", `${kind.name}: ${pin.title}, ${label}`);
   card.innerHTML = `
     <div class="pin-card-head">
-      <span class="pin-card-kind">${kind.glyph} ${kind.name} · ${esc(label)}</span>
+      <span class="pin-card-kind">${kind.glyph} ${kind.name}</span>
       <span class="pin-evidence">${esc(pin.evidence)}</span>
     </div>
-    <h3>${esc(pin.title)}</h3>
+    <h3>${esc(pin.title)} <span class="pin-card-label">· ${esc(label)}</span></h3>
     <p class="pin-basic">${esc(pin.basic)}</p>
     <div class="pin-level">For researchers</div>
     <p class="pin-researcher">${esc(pin.researcher)}</p>
@@ -136,15 +137,17 @@ function openPinCard(group, button, pin, reviewed) {
 }
 
 // Below the button (above it if there's no room), lined up with its group and kept inside the viewport, clear of a
-// side chat.
+// side chat. In a wide right-hand margin it narrows to stay off the page.
 function placeCard(card, button) {
   const el = card.parentElement;
   const page = el.getBoundingClientRect();
   const b = button.getBoundingClientRect();
+  const g = button.parentElement.getBoundingClientRect();
   const chat = document.querySelector(".chat")?.getBoundingClientRect();
   const right = (chat && chat.left > page.left ? chat.left : document.documentElement.clientWidth) - RAIL.edge;
+  card.style.width = g.left > page.right && right - g.left >= RAIL.card ? `${Math.min(right - g.left, RAIL.card + 40)}px` : "";
   const [w, h] = [card.offsetWidth, card.offsetHeight];
-  const left = Math.max(RAIL.edge, Math.min(button.parentElement.getBoundingClientRect().left, right - w));
+  const left = Math.max(RAIL.edge, Math.min(g.left, right - w));
   let top = b.bottom + 6;
   if (top + h > innerHeight - RAIL.edge) top = b.top - 6 - h;
   if (top < RAIL.edge) top = Math.max(RAIL.edge, innerHeight - RAIL.edge - h);
