@@ -154,7 +154,7 @@ def test_route_prefers_generated_over_shipped():
     paper_id = db.save(paper)
     assert pins.has_pins(paper_id, paper.url, None)  # shipped for its arXiv id
     shipped = client.get(f"/papers/{paper_id}/pins").json()
-    assert shipped["arxiv_id"] == "2506.22373" and shipped["verdict"] is None
+    assert shipped["arxiv_id"] == "2506.22373" and shipped["verdict"] == pins.load("2506.22373").verdict
     figure = PaperPins.model_validate(shipped).targets[0]
     mine = PaperPins(reviewed="Agent review, 17 Oct 2026", verdict="Fine.", targets=[figure.model_copy(update={"pins": [pin()]})])
     pins.save(paper_id, mine)
