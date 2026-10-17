@@ -50,8 +50,9 @@ def save_paper(req: SaveRequest) -> dict:
 def list_papers() -> list[dict]:
     """Summaries for the library view; fetch /papers/{id} for the full record."""
     return [
-        {"id": pid, "title": title, "authors": [a["raw"] for a in json.loads(authors)], "year": year, "venue": venue, "url": url, "n_pages": n_pages}
-        for pid, title, authors, year, venue, url, n_pages in db.listing()
+        {"id": pid, "title": title, "authors": [a["raw"] for a in json.loads(authors)], "year": year, "venue": venue, "url": url, "n_pages": n_pages,
+         "reviewed": pins.has_pins(pid, url, arxiv_id)}  # has pins from an agent review: the library's "AI reviewed" filter
+        for pid, title, authors, year, venue, url, arxiv_id, n_pages in db.listing()
     ]
 
 
@@ -60,7 +61,12 @@ def get_paper(paper_id: int) -> dict:
     paper = db.get(paper_id)
     if not paper:
         raise HTTPException(404)
-    return {**paper.model_dump(), "has_pdf": db.has_pdf(paper_id), "has_abstract": db.get_abstract(paper_id) is not None}
+    return {
+        **paper.model_dump(),
+        "has_pdf": db.has_pdf(paper_id),
+        "has_abstract": db.get_abstract(paper_id) is not None,
+        "reviewed": pins.has_pins(paper_id, paper.url, paper.arxiv_id),  # has pins from an agent review (review.js)
+    }
 
 
 @app.delete("/papers/{paper_id}", status_code=204)
