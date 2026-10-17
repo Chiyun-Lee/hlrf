@@ -84,9 +84,11 @@ async function library() {
     route();
   });
   render();
+  (window.requestIdleCallback ?? setTimeout)(() => preloadReader()); // so a paper opens without waiting for pdf.js
 }
 
 async function paper(id) {
+  preloadReader(id); // pdf.js, the PDF and the handwriting font load while the paper's details do
   const p = await api(`/papers/${id}`);
   const groups = [...new Set(p.authors.map((a) => a.equal_contribution_group).filter((g) => g != null))];
   const authors = p.authors

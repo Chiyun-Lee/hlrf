@@ -9,14 +9,49 @@ const NOTE_PAD = 4; // PDF points of breathing room around a paragraph's box
 const MAX_FONT = 0.024; // largest note font, as a fraction of the page width
 const MIN_FONT = { summary: 12, figure: 14, aside: 12 }; // px; below this a note grows past its box instead
 const MAX_GAP = 0.03; // vertical gap (fraction of page height) that splits a note's text into separate boxes
+const NOTES_AHEAD = "300% 0px"; // ask for a page's notes three screens before it scrolls into view (Claude is slow)...
+const DRAW_AHEAD = "100% 0px"; // ...and draw it one screen before
+const NOTES_AT_ONCE = 3; // pages whose notes are asked for at a time, so a fast scroll can't start a Claude call per page
 
 let pdfjsLib;
-async function loadPdf(url) {
-  if (!pdfjsLib) {
-    pdfjsLib = await import(`${PDFJS}/pdf.min.mjs`);
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `${PDFJS}/pdf.worker.min.mjs`;
-  }
-  return pdfjsLib.getDocument(url).promise;
+let pdfjs; // pdf.js and its worker, loading or loaded
+let prefetched; // {url, doc}: the PDF preloadReader started, for the reader to pick up
+
+// pdf.js and its worker (1.5 MB together, mostly the worker) load side by side, once: one worker serves every PDF. A
+// cross-origin script can't be a worker itself, so a one-line module imports it (as pdf.js does). Waiting for its
+// first message ("ready") means a worker that fails to load fails the reader instead of leaving it waiting.
+function loadPdfjs() {
+  pdfjs ??= Promise.all([
+    import(`${PDFJS}/pdf.min.mjs`),
+    new Promise((resolve, reject) => {
+      const src = URL.createObjectURL(new Blob([`import "${PDFJS}/pdf.worker.min.mjs";`], { type: "text/javascript" }));
+      const worker = new Worker(src, { type: "module" });
+      worker.addEventListener("message", () => resolve(worker), { once: true });
+      worker.addEventListener("error", reject, { once: true });
+    }),
+  ]).then(([lib, worker]) => {
+    lib.GlobalWorkerOptions.workerPort = worker;
+    return (pdfjsLib = lib);
+  });
+  return pdfjs;
+}
+
+// Opens a PDF, or picks up the one preloadReader started.
+function loadPdf(url) {
+  const doc = prefetched?.url === url ? prefetched.doc : loadPdfjs().then((lib) => lib.getDocument(url).promise);
+  prefetched = null;
+  return doc;
+}
+
+// Starts loading what the reader needs: pdf.js, its worker, the handwriting font and, given a paper, its PDF. A paper
+// calls this as it opens, so they load alongside its details; the library calls it when the browser is idle.
+function preloadReader(paperId) {
+  document.fonts.load('1em "xkcd"').catch(() => {});
+  loadPdfjs().catch(() => {}); // the reader reports it if this fails
+  if (paperId == null) return;
+  const url = `/papers/${paperId}/pdf`;
+  prefetched = { url, doc: loadPdfjs().then((lib) => lib.getDocument(url).promise) };
+  prefetched.doc.catch(() => {}); // papers we only have as HTML have no PDF
 }
 
 // Renders paper `p` (from GET /papers/:id) into `container`.
@@ -28,12 +63,12 @@ async function renderReader(container, paperId, p) {
   // Methods pins from an agent review on figures and tables (pins.js).
   showPins(container, paperId, p);
 
-  // Draw pages (and fetch their notes) shortly before they scroll into view.
+  // Draw pages shortly before they scroll into view; their notes are asked for earlier (nearbyNotes).
   const seen = new IntersectionObserver(
-    (entries) => entries.filter((e) => e.isIntersecting).forEach((e) => (seen.unobserve(e.target), e.target.load())),
-    { rootMargin: "100% 0px" },
+    (entries) => entries.filter((e) => e.isIntersecting).forEach((e) => (seen.unobserve(e.target), e.target.draw())),
+    { rootMargin: DRAW_AHEAD },
   );
-  pages.forEach((el) => seen.observe(el));
+  pages.forEach((el) => (seen.observe(el), nearbyNotes.observe(el)));
 
   // Highlight text (in a note or the original) to ask about it; see chat.js.
   enableAsk(container, paperId);
@@ -67,8 +102,8 @@ function pageView(paperId, page, i, pdf) {
   }
   el.insertAdjacentHTML("beforeend", `<div class="page-status"></div>`);
 
-  el.load = async () => {
-    if (onPdf) drawPdfPage(el, pdf, i);
+  el.draw = () => onPdf && drawPdfPage(el, pdf, i);
+  el.loadNotes = async () => {
     const status = el.querySelector(".page-status");
     status.textContent = "writing notes…";
     try {
@@ -77,10 +112,37 @@ function pageView(paperId, page, i, pdf) {
       status.textContent = "";
     } catch (e) {
       status.innerHTML = `notes failed <button>retry</button>`;
-      status.querySelector("button").onclick = () => el.load();
+      status.querySelector("button").onclick = () => el.loadNotes();
     }
   };
   return el;
+}
+
+// Claude takes seconds to write a page's notes, so they're asked for a few screens ahead: at most NOTES_AT_ONCE pages
+// at a time, nearest the screen first, and only pages still near it by then (a fast scroll passes most by).
+const waiting = new Set(); // pages near the screen whose notes haven't been asked for
+let asking = 0;
+const nearbyNotes = new IntersectionObserver(
+  (entries) => {
+    entries.forEach((e) => (e.isIntersecting ? waiting.add(e.target) : waiting.delete(e.target)));
+    askForNotes();
+  },
+  { rootMargin: NOTES_AHEAD },
+);
+
+function askForNotes() {
+  const away = (el) => {
+    const r = el.getBoundingClientRect();
+    return Math.max(0, r.top - innerHeight, -r.bottom); // 0 while on screen
+  };
+  waiting.forEach((el) => el.isConnected || waiting.delete(el)); // pages of a paper since closed
+  while (asking < NOTES_AT_ONCE && waiting.size) {
+    const el = [...waiting].reduce((a, b) => (away(b) < away(a) ? b : a));
+    waiting.delete(el);
+    nearbyNotes.unobserve(el);
+    asking++;
+    el.loadNotes().finally(() => (asking--, askForNotes()));
+  }
 }
 
 async function drawPdfPage(el, pdf, i) {
