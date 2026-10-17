@@ -40,6 +40,7 @@ const routes = [
 async function route() {
   const [re, view] = routes.find(([re]) => re.test(location.hash)) ?? [/$/, notFound];
   closeChat();
+  closeReview();
   const tab = location.hash.startsWith("#/for-you") ? "for-you" : location.hash === "#/me" ? "me" : location.hash === "#/revision" ? "revision" : "library";
   document.querySelectorAll(".tabs a").forEach((a) => a.toggleAttribute("aria-current", a.dataset.tab === tab));
   app.innerHTML = `<p class="muted">Loading…</p>`;
@@ -58,30 +59,54 @@ route();
 async function library() {
   const papers = await api("/papers");
   app.innerHTML = `<h1 class="hand">Your papers</h1>${addPaperForm()}
-    ${papers.length ? `<input type="search" placeholder="Filter by title or author" id="q" /><div id="list"></div>` : `<p class="empty">No papers yet! Add one above, or hit <b>Save this paper</b> in the Chrome extension.</p>`}`;
+    ${papers.length ? `<div class="library-tools">
+      <input type="search" placeholder="Filter by title or author" id="q" />
+      <button class="btn reviewed-filter" id="reviewed" aria-pressed="false"></button>
+    </div>
+    <div id="list"></div>` : `<p class="empty">No papers yet! Add one above, or hit <b>Save this paper</b> in the Chrome extension.</p>`}`;
   wireAddPaper(app.querySelector(".add-paper"));
   if (!papers.length) return;
   const list = app.querySelector("#list");
-  const render = (q = "") => {
-    q = q.toLowerCase();
-    list.innerHTML = papers
-      .filter((p) => (p.title + p.authors.join(" ")).toLowerCase().includes(q))
+  const search = app.querySelector("#q");
+  const reviewedToggle = app.querySelector("#reviewed"); // show only the papers an agent has reviewed (they have pins)
+  const reviews = {}; // agent reviews by paper id (GET /reviews, review.js): the list shows without them
+  const reviewed = (p) => p.reviewed || reviews[p.id]?.state === "done";
+  try {
+    reviewedToggle.setAttribute("aria-pressed", localStorage.getItem("onlyReviewed") === "1");
+  } catch {} // storage blocked: start with every paper
+  const render = () => {
+    const q = search.value.toLowerCase();
+    const onlyReviewed = reviewedToggle.getAttribute("aria-pressed") === "true";
+    reviewedToggle.textContent = `AI reviewed · ${papers.filter(reviewed).length}`;
+    const shown = papers.filter((p) => (p.title + p.authors.join(" ")).toLowerCase().includes(q) && (!onlyReviewed || reviewed(p)));
+    list.innerHTML = shown
       .map(
         (p) => `<div class="paper-card">
           <a href="#/papers/${p.id}"><h2>${esc(p.title)}</h2></a>
-          <div class="muted small">${esc(shortAuthors(p.authors))}${p.year ? ` · ${p.year}` : ""}${p.venue ? ` · ${esc(p.venue)}` : ""} · ${p.n_pages} pages</div>
+          <div class="muted small">${esc(shortAuthors(p.authors))}${p.year ? ` · ${p.year}` : ""}${p.venue ? ` · ${esc(p.venue)}` : ""} · ${p.n_pages} pages${reviewBadge(reviews[p.id], reviewed(p))}</div>
           <button class="btn quiet delete" data-id="${p.id}">Delete</button>
         </div>`,
       )
       .join("");
+    if (!shown.length && onlyReviewed && !q) list.innerHTML = `<p class="muted">No papers reviewed yet. Open one and click <b>Run paper2agent review</b>.</p>`;
   };
-  app.querySelector("#q").addEventListener("input", (e) => render(e.target.value));
+  search.addEventListener("input", render);
+  reviewedToggle.addEventListener("click", () => {
+    const on = reviewedToggle.getAttribute("aria-pressed") !== "true";
+    reviewedToggle.setAttribute("aria-pressed", on);
+    try {
+      localStorage.setItem("onlyReviewed", on ? "1" : "");
+    } catch {}
+    render();
+  });
+  api("/reviews").then((found) => (Object.assign(reviews, found), render())).catch(() => {}); // just badges if it fails
   list.addEventListener("click", async (e) => {
     if (!e.target.matches(".delete")) return;
     await deletePaper(e.target.dataset.id);
     route();
   });
   render();
+  (window.requestIdleCallback ?? setTimeout)(() => preloadReader()); // so a paper opens without waiting for pdf.js
 }
 
 // "Add a paper" on the library page: paste a link, or upload a PDF (pick it or drop it on the box), or both: a link
@@ -144,6 +169,7 @@ function toBase64(file) {
 }
 
 async function paper(id) {
+  preloadReader(id); // pdf.js, the PDF and the handwriting font load while the paper's details do
   const p = await api(`/papers/${id}`);
   const groups = [...new Set(p.authors.map((a) => a.equal_contribution_group).filter((g) => g != null))];
   const authors = p.authors
@@ -172,17 +198,26 @@ async function paper(id) {
         <button class="btn" id="abstract"></button>
         <button class="btn primary" id="quiz">Quiz me ✦</button>
         ${p.feed_id ? `<button class="btn" id="mine" title="Add to the papers For you ranks each day's arXiv listing by (For you → Your papers)"></button>` : ""}
+        <button class="btn review-button" id="review">Run paper2agent review</button>
         <button class="btn quiet" id="delete">Delete</button>
       </div>
     </section>
     <article class="doc" id="doc"></article>`;
   const doc = app.querySelector("#doc");
+  // Show originals switches every note off (and keeps notes written later off), leaving the paper as printed with any
+  // agent-review pins on it; the choice holds from paper to paper.
   const toggle = app.querySelector("#toggle-notes");
-  toggle.addEventListener("click", () => {
-    const on = toggle.textContent === "Show notes";
+  const showNotes = (on) => {
     setAllNotes(doc, on);
     toggle.textContent = on ? "Show originals" : "Show notes";
+    toggle.setAttribute("aria-pressed", String(!on));
+  };
+  toggle.addEventListener("click", () => {
+    const on = doc.classList.contains("originals");
+    showNotes(on);
+    remember("originals", !on);
   });
+  if (recall("originals")) showNotes(false);
   const abstractButton = app.querySelector("#abstract");
   const quizButton = app.querySelector("#quiz");
   const hasAbstract = () => p.abstract_levels.includes(level); // abstracts are made per reading level
@@ -206,7 +241,6 @@ async function paper(id) {
     setLevel(key);
     app.querySelectorAll(".levels button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.level === key));
     closeChat();
-    toggle.textContent = "Show originals";
     showButtons();
     reloadNotes(doc);
   });
@@ -217,6 +251,7 @@ async function paper(id) {
     await deletePaper(id);
     location.hash = "#/";
   });
+  setupReview(app.querySelector("#review"), doc, id, p); // paper2agent review in the background (review.js)
   await renderReader(doc, id, p);
 }
 
@@ -321,6 +356,21 @@ async function api(path, options) {
     throw Object.assign(new Error(message ?? `${res.status} ${res.statusText}`), { status: res.status, detail });
   }
   return res.status === 204 ? null : res.json();
+}
+
+// A choice kept in this browser (localStorage can be blocked: then it lasts until the page is left).
+function remember(key, on) {
+  try {
+    localStorage.setItem(key, on ? "1" : "");
+  } catch {}
+}
+
+function recall(key) {
+  try {
+    return localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
 }
 
 function shortAuthors(names) {

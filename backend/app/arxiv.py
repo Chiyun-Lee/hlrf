@@ -10,9 +10,11 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
+from .arxiv_categories import CATEGORY_GROUPS
 from .schemas import ArxivPaper
 
 API = "https://export.arxiv.org/api/query"
+CATEGORIES = {code: name for group in CATEGORY_GROUPS.values() for code, name in group.items()}  # code -> name
 ATOM = "{http://www.w3.org/2005/Atom}"
 ARXIV = "{http://arxiv.org/schemas/atom}"
 EASTERN = ZoneInfo("America/New_York")

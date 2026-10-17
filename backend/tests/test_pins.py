@@ -21,26 +21,34 @@ def test_shipped_pins_are_short_and_readable():
         for target in paper_pins.targets:
             x0, y0, x1, y1 = target.bbox
             assert 0 <= x0 < x1 and 0 <= y0 < y1 and target.pins
+            kinds = [pin.kind for pin in target.pins]
+            assert kinds[0] == "data" and kinds.count("data") == 1, (target.label, kinds)  # data provenance leads
             for pin in target.pins:
                 assert len(pin.title.split()) <= 4, pin.title
                 assert len(pin.basic.split()) <= 22, pin.basic
                 assert len(pin.researcher.split()) <= 45, pin.researcher
 
 
+def shipped(paper: Paper):
+    return pins.for_paper(db.save(paper), paper)  # a library paper without generated pins
+
+
 def test_pins_only_where_the_caption_matches():
-    found = pins.for_paper(cosmography())
+    found = shipped(cosmography())
     assert found and found.reviewed and [t.label for t in found.targets] == ["Figure 1"]
-    assert pins.for_paper(cosmography(url="https://arxiv.org/pdf/2506.22373"))  # any version or link form finds the file
-    assert pins.for_paper(cosmography(caption_y=600)) is None  # caption far below the stored box: another layout
-    assert pins.for_paper(cosmography(page=3)) is None  # figure moved to another page
-    assert pins.for_paper(cosmography(url="https://arxiv.org/abs/2401.00001")) is None  # no pins written
-    assert pins.for_paper(cosmography(url="https://example.org/paper.pdf")) is None  # not an arXiv paper
+    assert shipped(cosmography(url="https://arxiv.org/pdf/2506.22373"))  # any version or link form finds the file
+    assert shipped(cosmography(caption_y=600)) is None  # caption far below the stored box: another layout
+    assert shipped(cosmography(page=3)) is None  # figure moved to another page
+    assert shipped(cosmography(url="https://arxiv.org/abs/2401.00001")) is None  # no pins written
+    assert shipped(cosmography(url="https://example.org/paper.pdf")) is None  # not an arXiv paper
 
 
 def test_pins_route():
     paper_id = db.save(cosmography())
     found = client.get(f"/papers/{paper_id}/pins").json()
     assert [t["label"] for t in found["targets"]] == ["Figure 1"]
-    assert {p["kind"] for p in found["targets"][0]["pins"]} == {"method", "concern"}
+    figure_1 = next(t for t in pins.load("2506.22373").targets if t.label == "Figure 1")
+    assert found["targets"][0]["pins"] == [p.model_dump() for p in figure_1.pins]
+    assert [p["kind"] for p in found["targets"][0]["pins"]] == ["data", "concern", "method"]
     assert client.get(f"/papers/{db.save(cosmography(page=3))}/pins").json() is None
     assert client.get("/papers/999999/pins").status_code == 404

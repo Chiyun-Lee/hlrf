@@ -93,16 +93,18 @@ class PinTarget(BaseModel):
 
     label: str  # "Figure 1", "Table II"
     page: int  # 0-indexed
-    caption: str  # how its caption starts ("Figure 1."); the pins only show if the page has it right below `bbox`
-    bbox: list[float]  # [x0, y0, x1, y1] in PDF points from the page's top-left, as in Block.bbox
+    caption: str  # how its caption starts ("Figure 1."); the pins only show if the page has it right below or above `bbox`
+    bbox: list[float]  # [x0, y0, x1, y1] in PDF points from the page's top-left, as in Block.bbox; without the caption
     pins: list[Pin]
 
 
 class PaperPins(BaseModel):
-    """All the pins for one paper: one JSON file per arXiv id in app/pins/."""
+    """All the pins for one paper: an agent review's for a library paper (stored in the database), or shipped as one
+    JSON file per arXiv id in app/pins/."""
 
-    arxiv_id: str  # without the version
+    arxiv_id: str | None = None  # without the version; None for a paper not on arXiv
     reviewed: str  # what the pins rest on, shown under each pin
+    verdict: str | None = None  # the review's bottom line, in 1-2 sentences
     targets: list[PinTarget]
 
 
@@ -119,26 +121,36 @@ class Pitches(BaseModel):
 
 
 class ArxivPaper(BaseModel):
-    """A new arXiv paper as For you stores and ranks it (app/arxiv.py)."""
+    """A paper as For you stores and ranks it: from arXiv (app/arxiv.py) or bioRxiv (app/biorxiv.py), or one of your
+    published papers that isn't on arXiv (source "doi", app/published.py)."""
 
-    id: str  # without the version: 2410.01234 or hep-th/0101001
+    id: str  # arXiv: without the version, 2410.01234 or hep-th/0101001; bioRxiv and published papers: the DOI
     version: int = 1
     title: str
     abstract: str
     authors: list[str]
-    categories: list[str]  # primary first
+    categories: list[str]  # primary first; a bioRxiv paper has one, its subject
     published: datetime
-    listing_date: date  # the day it appears in arXiv's daily "new" listing
+    listing_date: date  # the day it appears in For you: arXiv's daily "new" listing, or the weekday bioRxiv posted it
     comment: str | None = None
     journal_ref: str | None = None
     doi: str | None = None
+    source: Literal["arxiv", "biorxiv", "doi"] = "arxiv"
 
     @property
     def abs_url(self) -> str:
+        if self.source == "biorxiv":
+            return f"https://www.biorxiv.org/content/{self.id}v{self.version}"
+        if self.source == "doi":
+            return f"https://doi.org/{self.id}"
         return f"https://arxiv.org/abs/{self.id}"
 
     @property
     def pdf_url(self) -> str:
+        if self.source == "biorxiv":
+            return f"{self.abs_url}.full.pdf"
+        if self.source == "doi":
+            return self.abs_url  # the publisher's page links its PDF
         return f"https://arxiv.org/pdf/{self.id}"
 
 
