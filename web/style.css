@@ -391,3 +391,145 @@ input[type="search"] { width: 100%; box-sizing: border-box; padding: 10px 12px; 
 .proof-text mark { background: #fff1a8; color: inherit; padding: 1px 2px; border-radius: 3px; box-shadow: 0 0 0 1px #f0d64a; }
 .proof-note { font-size: 17px; }
 .proof-note ul { margin: 4px 0 0; padding-left: 1.2em; }
+
+/* Agent review (review.js): the header button and its menu, the panel in the corner that follows a run (folding down
+   to a pill), and the library's filter and badges. A run's progress also shows as a thin ink line along the bottom of
+   the header button, the pill and the library badge. */
+.review-button, .review-pill, .review-badge.running {
+  background: linear-gradient(var(--ink), var(--ink)) 0 100% / calc(var(--progress, 0) * 100%) 2px no-repeat var(--card);
+  transition: background-size 0.6s ease-out; font-variant-numeric: tabular-nums; }
+.review-button.failed { border-color: var(--warn); color: var(--warn); }
+:is(.review-button, .reviewed-filter, .review-chooser *, .review-dock *):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* The menu under the header button: full or quick, and for a reviewed paper what came of it */
+.review-chooser { position: absolute; z-index: 45; width: min(360px, calc(100vw - 16px)); box-sizing: border-box; padding: 6px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 28px rgba(31, 47, 122, 0.16);
+  font: 13px/1.45 system-ui, -apple-system, sans-serif; color: var(--text); }
+.review-summary { margin: 0 0 6px; padding: 8px 8px 10px; border-bottom: 1px solid var(--border); }
+.review-summary p { margin: 0; }
+.review-summary .review-headline { font-weight: 600; }
+.review-verdict { color: var(--ink); }
+.review-summary .review-verdict { margin-top: 4px; }
+.review-summary .review-links { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; }
+.review-show { padding: 0; border: 0; background: none; font: inherit; color: var(--accent); cursor: pointer; }
+.review-show:hover { text-decoration: underline; }
+.review-form fieldset { margin: 0; padding: 0; border: 0; }
+.review-option { display: grid; grid-template-columns: 16px 1fr auto; align-items: baseline; gap: 2px 8px; padding: 8px;
+  border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
+.review-option + .review-option { margin-top: 2px; }
+.review-option:hover { background: #f6f6f3; }
+.review-option:has(:checked) { border-color: var(--ink); background: var(--wash-ink); }
+.review-option input { margin: 0; accent-color: var(--ink); }
+.review-option b { font-weight: 600; }
+.review-time { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.review-about { grid-column: 2 / -1; color: var(--muted); }
+.review-pins, .review-note, .review-form .review-error { margin: 8px 8px 0; }
+.review-note { font-size: 12px; color: var(--muted); }
+.review-error { color: var(--warn); }
+.review-actions { display: flex; justify-content: flex-end; gap: 8px; margin: 12px 8px 6px; }
+.review-btn { padding: 4px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); font: inherit; color: var(--text); cursor: pointer; }
+.review-btn:hover { border-color: var(--ink); }
+.review-btn.primary { border-color: var(--ink); background: var(--ink); color: #fff; }
+.review-btn.primary:hover { background: #17235e; }
+.review-btn:disabled { opacity: 0.6; cursor: progress; }
+
+/* The panel: bottom-right over the paper (beside the chat when it's open), folding down to a pill */
+.review-dock { position: fixed; z-index: 40; right: 16px; bottom: 16px; display: flex; flex-direction: column; align-items: flex-end;
+  font: 13px/1.45 system-ui, -apple-system, sans-serif; color: var(--text); pointer-events: none; }
+.review-dock > * { pointer-events: auto; }
+body.chat-open .review-dock { right: 396px; }
+.review-dock.folded .review-panel, .review-dock:not(.folded) .review-pill { display: none; }
+.review-panel { display: flex; flex-direction: column; width: 340px; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px);
+  box-sizing: border-box; background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 28px rgba(31, 47, 122, 0.16); }
+body.chat-open .review-panel { max-width: calc(100vw - 412px); }
+.review-panel:focus { outline: none; }
+.review-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 8px 0 14px; }
+.review-head h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.review-fold { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--muted);
+  font: 18px/1 system-ui, -apple-system, sans-serif; cursor: pointer; }
+.review-fold:hover { background: #f1f0ec; color: var(--text); }
+.review-bar { flex: none; height: 6px; margin: 6px 14px 0; border-radius: 3px; background: #e9e8e3; overflow: hidden; }
+.review-bar > div { width: calc(var(--progress, 0) * 100%); height: 100%; border-radius: 3px; background: var(--ink); transition: width 0.6s ease-out; }
+.review-bar.waiting > div { width: 30%; animation: review-wait 1.6s ease-in-out infinite; } /* until the first stage starts */
+@keyframes review-wait { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+.review-dock.failed .review-bar > div { background: var(--warn); }
+.review-dock.stopped .review-bar > div { background: #b9bdcc; }
+.review-now { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 8px 14px 0; }
+.review-now .review-headline { font-weight: 600; }
+.review-clock { color: var(--muted); font-variant-numeric: tabular-nums; }
+.review-result { margin: 4px 14px 0; }
+.review-result:empty { display: none; }
+.review-result p { margin: 0; }
+
+/* Stages: done ✓, the current one (a small spinner), still to come */
+.review-stages { flex: none; margin: 10px 0 0; padding: 8px 14px; border-top: 1px solid var(--border); list-style: none; }
+.review-stages li { display: flex; align-items: baseline; gap: 8px; padding: 1px 0; color: var(--muted); }
+.review-stages .past { color: var(--text); }
+.review-stages .now { color: var(--ink); font-weight: 600; }
+.review-dock.failed .review-stages .halt { color: var(--warn); }
+.review-stages .mark { flex: none; width: 12px; text-align: center; color: inherit; }
+.review-stages .past .mark { color: var(--ink); }
+.review-stages .now .mark { box-sizing: border-box; width: 10px; height: 10px; margin: 0 1px; align-self: center; border: 1.5px solid var(--ink);
+  border-right-color: transparent; border-radius: 50%; animation: review-spin 0.9s linear infinite; }
+@keyframes review-spin { to { transform: rotate(1turn); } }
+.review-dock.done .review-stages { display: none; } /* all ticked: the feed says what happened */
+
+/* The live feed of what the agent does, newest at the bottom */
+.review-log { position: relative; display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--border); }
+.review-log:has(.review-feed:empty) { display: none; }
+.review-feed { min-height: 0; max-height: 220px; overflow-y: auto; overscroll-behavior: contain; margin: 0; padding: 6px 14px 8px;
+  list-style: none; font-size: 12px; line-height: 1.4; }
+.ev { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; padding: 2px 0; }
+.ev-t { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+.ev-x { overflow-wrap: anywhere; }
+.ev.tool { color: var(--muted); }
+.ev.tool .ev-x { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-icon { width: 11px; height: 11px; margin-right: 5px; vertical-align: -1px; fill: none; stroke: currentColor; stroke-width: 1.4;
+  stroke-linecap: round; stroke-linejoin: round; }
+.ev.stage { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); font-weight: 600; }
+.ev.stage:first-child { margin-top: 0; padding-top: 2px; border-top: 0; }
+.ev.done { font-weight: 600; color: var(--ink); }
+.ev.error { color: var(--warn); }
+.ev.sub .ev-x { padding-left: 10px; }
+.ev.gap { color: var(--muted); }
+.review-latest { position: absolute; right: 12px; bottom: 8px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--card); font: inherit; font-size: 12px; color: var(--ink); cursor: pointer; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
+.review-foot { flex: none; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; padding: 10px 14px;
+  border-top: 1px solid var(--border); }
+.review-keeps, .review-foot > a { margin-right: auto; }
+.review-keeps { font-size: 12px; color: var(--muted); }
+.review-stop:hover { border-color: var(--warn); color: var(--warn); }
+.review-foot .review-form { flex: 1; margin: -4px -6px; }
+
+.review-pill { display: flex; align-items: center; gap: 10px; padding: 7px 12px; border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(31, 47, 122, 0.14); font: inherit; color: var(--ink); cursor: pointer; }
+.review-dock:not(.running) .review-pill { background-size: 0 2px; }
+.review-dock.failed .review-pill { color: var(--warn); }
+.review-pill .review-clock:empty { display: none; }
+.review-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* Library: a toggle for just the reviewed papers (they have pins), and a badge on their cards */
+.library-tools { display: flex; gap: 8px; }
+.library-tools input[type="search"] { flex: 1; min-width: 0; }
+.reviewed-filter { flex: none; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); font: inherit;
+  font-size: 14px; color: var(--muted); cursor: pointer; font-variant-numeric: tabular-nums; }
+.reviewed-filter:hover { border-color: var(--ink); color: var(--ink); }
+.reviewed-filter[aria-pressed="true"] { border-color: var(--ink); background: var(--wash-ink); color: var(--ink); }
+.review-badge { display: inline-block; margin-left: 8px; padding: 0 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px;
+  line-height: 18px; color: var(--ink); white-space: nowrap; }
+
+@media (max-width: 600px) {
+  .review-dock { left: 8px; right: 8px; bottom: 8px; }
+  .review-panel { width: 100%; max-width: none; max-height: 62vh; }
+  .review-stages { display: none; } /* "Stage 3 of 7 · …" says where it is */
+  .review-feed { max-height: 28vh; }
+  /* The chat takes the bottom of the screen: the review shrinks to its pill above it */
+  body.chat-open .review-dock { right: 8px; bottom: calc(65vh + 8px); }
+  body.chat-open .review-dock .review-panel { display: none; }
+  body.chat-open .review-dock .review-pill { display: flex; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .review-button, .review-pill, .review-badge.running, .review-bar > div { transition: none; }
+  .review-bar.waiting > div { width: 100%; opacity: 0.3; animation: none; }
+  .review-stages .now .mark { border-right-color: var(--ink); animation: none; }
+}

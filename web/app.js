@@ -16,6 +16,7 @@ const routes = [
 async function route() {
   const [re, view] = routes.find(([re]) => re.test(location.hash)) ?? [/$/, notFound];
   closeChat();
+  closeReview();
   const tab = location.hash.startsWith("#/for-you") ? "for-you" : "library";
   document.querySelectorAll(".tabs a").forEach((a) => a.toggleAttribute("aria-current", a.dataset.tab === tab));
   app.innerHTML = `<p class="muted">Loading…</p>`;
@@ -37,22 +38,46 @@ async function library() {
     app.innerHTML = `<p class="muted">No papers yet. Open a paper in Chrome and click <b>Save this paper</b> in the extension.</p>`;
     return;
   }
-  app.innerHTML = `<input type="search" placeholder="Filter by title or author" id="q" /><div id="list"></div>`;
+  app.innerHTML = `
+    <div class="library-tools">
+      <input type="search" placeholder="Filter by title or author" id="q" />
+      <button class="reviewed-filter" id="reviewed" aria-pressed="false"></button>
+    </div>
+    <div id="list"></div>`;
   const list = app.querySelector("#list");
-  const render = (q = "") => {
-    q = q.toLowerCase();
-    list.innerHTML = papers
-      .filter((p) => (p.title + p.authors.join(" ")).toLowerCase().includes(q))
+  const search = app.querySelector("#q");
+  const only = app.querySelector("#reviewed"); // show only the papers an agent has reviewed (they have pins)
+  const reviews = {}; // agent reviews by paper id (GET /reviews, review.js): the list shows without them
+  const reviewed = (p) => p.reviewed || reviews[p.id]?.state === "done";
+  try {
+    only.setAttribute("aria-pressed", localStorage.getItem("onlyReviewed") === "1");
+  } catch {} // storage blocked: start with every paper
+  const render = () => {
+    const q = search.value.toLowerCase();
+    const onlyReviewed = only.getAttribute("aria-pressed") === "true";
+    only.textContent = `AI reviewed · ${papers.filter(reviewed).length}`;
+    const shown = papers.filter((p) => (p.title + p.authors.join(" ")).toLowerCase().includes(q) && (!onlyReviewed || reviewed(p)));
+    list.innerHTML = shown
       .map(
         (p) => `<div class="paper-card">
           <a href="#/papers/${p.id}"><h2>${esc(p.title)}</h2></a>
-          <div class="muted small">${esc(shortAuthors(p.authors))}${p.year ? ` · ${p.year}` : ""}${p.venue ? ` · ${esc(p.venue)}` : ""} · ${p.n_pages} pages</div>
+          <div class="muted small">${esc(shortAuthors(p.authors))}${p.year ? ` · ${p.year}` : ""}${p.venue ? ` · ${esc(p.venue)}` : ""} · ${p.n_pages} pages${reviewBadge(reviews[p.id], reviewed(p))}</div>
           <button class="delete" data-id="${p.id}">Delete</button>
         </div>`,
       )
       .join("");
+    if (!shown.length && onlyReviewed && !q) list.innerHTML = `<p class="muted">No papers reviewed yet. Open one and click <b>Run paper2agent review</b>.</p>`;
   };
-  app.querySelector("#q").addEventListener("input", (e) => render(e.target.value));
+  search.addEventListener("input", render);
+  only.addEventListener("click", () => {
+    const on = only.getAttribute("aria-pressed") !== "true";
+    only.setAttribute("aria-pressed", on);
+    try {
+      localStorage.setItem("onlyReviewed", on ? "1" : "");
+    } catch {}
+    render();
+  });
+  api("/reviews").then((found) => (Object.assign(reviews, found), render())).catch(() => {}); // just badges if it fails
   list.addEventListener("click", async (e) => {
     if (!e.target.matches(".delete")) return;
     await deletePaper(e.target.dataset.id);
@@ -86,6 +111,7 @@ async function paper(id) {
         <button class="toggle-notes" id="toggle-notes">Show originals</button>
         <button class="toggle-notes" id="abstract">${p.has_abstract ? "Graphical abstract" : "Done? Make graphical abstract"}</button>
         <button class="toggle-notes quiz-button" id="quiz" ${p.has_abstract ? "" : "hidden"}>Quiz me ✦</button>
+        <button class="toggle-notes review-button" id="review">Run paper2agent review</button>
         <button class="delete" id="delete">Delete</button>
       </div>
     </section>
@@ -110,6 +136,7 @@ async function paper(id) {
     await deletePaper(id);
     location.hash = "#/";
   });
+  setupReview(app.querySelector("#review"), doc, id, p); // paper2agent review in the background (review.js)
   await renderReader(doc, id, p);
 }
 
