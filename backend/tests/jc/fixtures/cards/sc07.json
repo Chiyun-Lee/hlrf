@@ -1,0 +1,57 @@
+{
+  "id": "sc07",
+  "citekey": "nakamura2023tissue",
+  "title": "Tissue-aware priors transfer integration from blood to solid organs",
+  "year": 2023,
+  "date": "2023-04-18",
+  "authors": [
+    "Y. Nakamura",
+    "F. Delgado"
+  ],
+  "abstract": "Integration methods tuned on blood lose retention on solid organs. A tissue-aware prior on the batch factor restores it without retraining, and its strength can be set without cell-type labels.",
+  "claims": [
+    {
+      "text": "Blood-tuned methods lose up to thirty percent retention on solid organs.",
+      "quote": {
+        "paper_id": "sc07",
+        "text": "Integration methods tuned on blood lose up to thirty percent of cell-type retention when applied to kidney and liver atlases.",
+        "loc": "p4 §3.1"
+      }
+    },
+    {
+      "text": "A tissue-aware prior restores retention without retraining.",
+      "quote": {
+        "paper_id": "sc07",
+        "text": "A tissue-aware prior on the batch factor restores retention on solid tissue without retraining the integration model.",
+        "loc": "p6 §3.3"
+      }
+    },
+    {
+      "text": "Prior strength is chosen without labels.",
+      "quote": {
+        "paper_id": "sc07",
+        "text": "The prior strength can be chosen from the batch-to-biology variance ratio without any cell-type labels.",
+        "loc": "p7 §3.4"
+      }
+    }
+  ],
+  "methods": [
+    "tissue-aware prior on the batch factor",
+    "variance-ratio prior selection"
+  ],
+  "data": [
+    "kidney and liver atlases",
+    "blood reference"
+  ],
+  "limits": [
+    {
+      "text": "One tissue per organ.",
+      "quote": {
+        "paper_id": "sc07",
+        "text": "Our benchmark remains restricted to one well-annotated tissue per organ, so cross-organ generalisation is not established.",
+        "loc": "p9 §5"
+      }
+    }
+  ],
+  "fulltext_excerpt": "Most integration methods were tuned on blood. Solid organs differ. Integration methods tuned on blood lose up to thirty percent of cell-type retention when applied to kidney and liver atlases. Epithelial gradients were the populations most often collapsed. We add a prior on the batch factor whose shape depends on the tissue. A tissue-aware prior on the batch factor restores retention on solid tissue without retraining the integration model. The prior changes only the inference step, so existing trained models can be reused. The prior strength can be chosen from the batch-to-biology variance ratio without any cell-type labels. This avoids the circularity of tuning against the labels one is later scored on. Our benchmark remains restricted to one well-annotated tissue per organ, so cross-organ generalisation is not established."
+}

@@ -1,0 +1,112 @@
+{
+  "id": "lewis2024",
+  "citekey": "lewis2024",
+  "title": "Understanding acoustic scale observations: the one-sided fight against Λ",
+  "year": 2024,
+  "date": "2024-12-18",
+  "authors": [
+    "Antony Lewis",
+    "Ewan Chamberlain"
+  ],
+  "abstract": "arXiv:2412.13894. Lewis and Chamberlain ask whether the preference for evolving dark energy in recent BAO fits can be produced by any physical dark energy model. Their lever is the null energy condition (NEC): a non-interacting dark-energy fluid has w >= -1, so its density cannot fall with redshift, and Lambda saturates the bound. Combined with the Planck acoustic scale theta_*, which fixes the distance to last scattering given standard early physics, this gives a one-sided integral constraint. They derive strict inequalities on D_H, D_M, D_V and F_AP relative to LCDM: D_M(z) >= D_M^Lambda(z) at every redshift, D_H starts above LCDM and crosses below it once, F_AP >= F_AP^Lambda, and H0 can only be lower, so NEC-consistent dark energy can only worsen the Hubble tension. In the CPL (w0, wa) plane the constant-H0 line, roughly wa = -4(1+w0), separates models whose deviation sign is NEC-consistent at some redshift from those consistent at none. Against DESI DR1 BAO points with a Planck PR3 fiducial, three bins (LRG2, LRG3+ELG1, ELG2) sit inside the excluded region, and the DESI BAO+CMB best-fit CPL model (w0 = -0.45, wa = -1.79) is forbidden above z ~ 0.25. Cobaya chains with an early-LCDM Planck likelihood, with or without Pantheon+, Union3 or DES Y5 supernovae, put most posterior mass in the excluded D_M < D_M^Lambda region. Conclusion: acoustic data favour LCDM over NEC-consistent alternatives; any thawing pull comes from supernovae at z below 0.2. Left open: combining with growth of structure, and how to read a future NEC-forbidden tension.",
+  "claims": [
+    {
+      "text": "Under the null energy condition and a fixed CMB acoustic scale, certain directions of deviation from LCDM in the BAO observables are impossible for any physical dark energy model.",
+      "quote": {
+        "paper_id": "lewis2024",
+        "text": "These inequalities demonstrate that certain deviations from ΛCDM are impossible for any physical dark energy model that respects the null energy condition.",
+        "loc": "Abstract"
+      }
+    },
+    {
+      "text": "Because D_M(z) >= D_M^Lambda(z) at all redshifts at fixed theta_*, any NEC-consistent dark energy lowers the inferred H0 and so can only make the Hubble tension worse.",
+      "quote": {
+        "paper_id": "lewis2024",
+        "text": "this is now sufficient to show that null-energy consistent dark energy can only exacerbate the Hubble tension.",
+        "loc": "Sec. II.B.1"
+      }
+    },
+    {
+      "text": "A CPL (w0, wa) fit over a finite low-redshift range can naively indicate phantom behaviour at high redshift even for a model that respects the NEC, so (w0, wa) contours cannot be read as evidence of NEC violation without the theta_* integral constraint.",
+      "quote": {
+        "paper_id": "lewis2024",
+        "text": "It is possible for a model to satisfy the null-energy condition, but, when constrained by measurements over a finite low-redshift range, to give constraints in the (w0, wa) plane that naively imply a violation of the null-energy condition (phantom behaviour) at high redshift",
+        "loc": "Sec. I"
+      }
+    },
+    {
+      "text": "The line of constant H0 through the LCDM point, approximately wa = -4(1+w0), divides the CPL plane into a region where the predicted sign of the BAO deviation can be NEC-consistent at some redshift and a region where it is consistent at no redshift.",
+      "quote": {
+        "paper_id": "lewis2024",
+        "text": "For currently measured parameter values, this line approximately corresponds to wa ≈ −4(1 + w0), though it is not exactly a straight line.",
+        "loc": "Sec. III"
+      }
+    },
+    {
+      "text": "Three of the DESI DR1 redshift bins have central values inside the NEC exclusion region relative to a fixed Planck PR3 fiducial LCDM, with any deviation from LCDM lying mainly in the D_M < D_M^Lambda direction (the text labels the middle bin LRG3+ELG2, while Fig. 3 labels it LRG3+ELG1).",
+      "quote": {
+        "paper_id": "lewis2024",
+        "text": "For three of the redshift bins – LRG2, LRG3+ELG2, and ELG2 – the data point centres lie within the exclusion region.",
+        "loc": "Sec. IV"
+      }
+    },
+    {
+      "text": "Because the data-favoured part of the (w0, wa) plane is where CPL predicts the wrong sign of deviation at z > 0.5, the CPL contours carry no consistent information about NEC-consistent models beyond what LCDM already gives.",
+      "quote": {
+        "paper_id": "lewis2024",
+        "text": "The constraint contours in the CPL plane therefore have no consistent interpretation in terms of additional information from BAO",
+        "loc": "Sec. IV"
+      }
+    }
+  ],
+  "methods": [
+    "Analytic derivation: flat FRW, non-interacting dark energy, fixed non-dark-energy parameters (theta_*, Omega_m h^2, Omega_b h^2) so that D_M(z_*) is fixed; the NEC (d rho_de/dz >= 0) plus the Friedmann equation gives a derivative bound on D_H and the inequalities of Table I on D_H, D_M, D_V and F_AP relative to LCDM, with the monotonicity of D_H/D_H^Lambda proved in Appendix A.",
+    "CPL mapping: for each (w0, wa) at fixed theta_* and Planck-like parameters, compute the sign of the predicted deviation of D_M from LCDM at each redshift and draw the redshift-dependent consistency lines plus the wa = -(1+w0) and wa ~ -4(1+w0) boundaries (Fig. 2).",
+    "Data comparison: plot the DESI DR1 BAO points in the D_H/D_H^Lambda vs D_M/D_M^Lambda and D_V/D_V^Lambda vs F_AP/F_AP^Lambda planes against the exclusion regions, using Planck PR3 best-fit LCDM as fiducial, with the DESI BAO+CMB best-fit CPL track overlaid (Fig. 3).",
+    "Parameter inference with Cobaya, camb and GetDist: a Gaussian early-LCDM Planck NPIPE (PR4) likelihood on theta_*, Omega_c h^2, Omega_b h^2 (chains of Lemos and Lewis), DESI BAO likelihoods per redshift, one massive neutrino of 0.06 eV, and optionally Pantheon+, Union3 or DES Y5 supernovae; priors on w0 and wa listed in Table II (Figs. 4 and 6).",
+    "Toy NEC-consistent model w(a) = max(w0 + wa(1-a), -1), implemented by modifying camb, to show how constraints and degeneracy directions change when NEC violation is forbidden (Fig. 5)."
+  ],
+  "data": [
+    "DESI DR1 BAO measurements (DESI 2024 VI, arXiv:2404.03002) at seven effective redshifts, 0.295 <= z_eff <= 2.33: 2D D_M/r_drag and D_H/r_drag with covariance in five bins (LRG1 z=0.51, LRG2 z=0.706, LRG3+ELG1 z=0.93, ELG2 z=1.317, Lya QSO z=2.33) plus D_V/r_drag only for BGS (z=0.295) and QSO (z=1.491); Sec. I phrases the range loosely as 0.2 <~ z <~ 2.",
+    "Planck 2018 PR3 best-fit parameters as the fiducial LCDM reference for Fig. 3, and Planck PR4 (NPIPE) early-LCDM constraints on theta_*, Omega_c h^2, Omega_b h^2 for the chains.",
+    "Type Ia supernova compilations Pantheon+, Union3 and DES Y5, added one at a time in the joint CPL and Max-CPL fits.",
+    "How to robustly identify physically consistent deviations from LCDM when acoustic-scale constraints are combined with other observables such as structure growth (Sec. V).",
+    "If future BAO data show tensions in NEC-forbidden directions, whether this signals measurement systematics or more radical changes such as interacting dark energy, modified gravity or altered early-universe physics (Sec. V).",
+    "Whether the supernova-driven pull towards NEC-consistent thawing at z < 0.2 is physical, given the differences between Pantheon+, Union3 and DES Y5 and the fact that it would worsen the distance-ladder calibration tension (Sec. IV)."
+  ],
+  "limits": [
+    {
+      "text": "The analysis is purely geometric (acoustic standard ruler) and does not include growth-of-structure or other probes.",
+      "quote": {
+        "paper_id": "lewis2024",
+        "text": "While we have focused here on geometric constraints from the acoustic standard ruler, a complete picture will require combining these results with constraints from structure growth and other cosmological probes.",
+        "loc": "Sec. V"
+      }
+    },
+    {
+      "text": "The authors stress that the CPL parameterization they interpret is itself unphysical, so results expressed in (w0, wa) need careful interpretation.",
+      "quote": {
+        "paper_id": "lewis2024",
+        "text": "Although the CPL parameterization is convenient and easy to implement, it is fundamentally unphysical, so results using it must be interpreted with care.",
+        "loc": "Sec. V"
+      }
+    },
+    {
+      "text": "The whole argument rests on assuming the null energy condition holds for the background, and the paper acknowledges there is no proof that it must.",
+      "quote": {
+        "paper_id": "lewis2024",
+        "text": "Although there is no clear reason that the null-energy condition cannot be violated at the level of the background cosmology",
+        "loc": "Sec. V"
+      }
+    },
+    {
+      "text": "Part of the roughly two-sigma offset of the joint posterior into the excluded region is attributed to a parameter-volume effect, and in the Max-CPL toy model the marginalized constraints depend strongly on the prior ranges.",
+      "quote": {
+        "paper_id": "lewis2024",
+        "text": "where the model is nearly independent of wa, so marginalized constraints depend strongly on the prior ranges.",
+        "loc": "Sec. IV"
+      }
+    }
+  ],
+  "fulltext_excerpt": "---\nid: 2412.13894\ncitekey: lewis2024\ntitle: \"Understanding acoustic scale observations: the one-sided fight against Λ\"\nyear: 2024\ndate: 2024-12-18\nauthors: [\"Antony Lewis\", \"Ewan Chamberlain\"]\narxiv: 2412.13894\nversion: v1\nrole: before\n---\n\n# Executive summary\nLewis and Chamberlain ask whether the preference for evolving dark energy in recent BAO fits can be produced by any physical dark energy model. Their lever is the null energy condition (NEC): a non-interacting dark-energy fluid has w >= -1, so its density cannot fall with redshift, and Lambda saturates the bound. Combined with the Planck acoustic scale theta_*, which fixes the distance to last scattering given standard early physics, this gives a one-sided integral constraint. They derive strict inequalities on D_H, D_M, D_V and F_AP relative to LCDM: D_M(z) >= D_M^Lambda(z) at every redshift, D_H starts above LCDM and crosses below it once, F_AP >= F_AP^Lambda, and H0 can only be lower, so NEC-consistent dark energy can only worsen the Hubble tension. In the CPL (w0, wa) plane the constant-H0 line, roughly wa = -4(1+w0), separates models whose deviation sign is NEC-consistent at some redshift from those consistent at none. Against DESI DR1 BAO points with a Planck PR3 fiducial, three bins (LRG2, LRG3+ELG1, ELG2) sit inside the excluded region, and the DESI BAO+CMB best-fit CPL model (w0 = -0.45, wa = -1.79) is forbidden above z ~ 0.25. Cobaya chains with an early-LCDM Planck likelihood, with or without Pantheon+, Union3 or DES Y5 supernovae, put most posterior mass in the excluded D_M < D_M^Lambda region. Conclusion: acoustic data favour LCDM over NEC-consistent alternatives; any thawing pull comes from supernovae at z below 0.2. Left open: combining with growth of structure, and how to read a future NEC-forbidden tension.\n\n## Claims\n- claim: Under the null energy condition and a fixed CMB acoustic scale, certain directions of deviation from LCDM in the BAO observables are impossible for any physical dark energy model.\n  quote: \"These inequalities demonstrate that certain deviations from ΛCDM are impossible for any physical dark energy model that respects the null energy condition.\"\n  loc: \"Abstract\"\n- claim: Because D_M(z) >= D_M^Lambda(z) at all redshifts at fixed theta_*, any NEC-consistent dark energy lowers the inferred H0 and so can only make the Hubble tension worse.\n  quote: \"this is now sufficient to show that null-energy consistent dark energy can only exacerbate the Hubble tension.\"\n  loc: \"Sec. II.B.1\"\n- claim: A CPL (w0, wa) fit over a finite low-redshift range can naively indicate phantom behaviour at high redshift even for a model that respects the NEC, so (w0, wa) contours cannot be read as evidence of NEC violation without the theta_* integral constraint.\n  quote: \"It is possible for a model to satisfy the null-energy condition, but, when constrained by measurements over a finite low-redshift range, to give constraints in the (w0, wa) plane that naively imply a violation of the null-energy condition (phantom behaviour) at high redshift\"\n  loc: \"Sec. I\"\n- claim: The line of constant H0 through the LCDM point, approximately wa = -4(1+w0), divides the CPL plane into a region where the predicted sign of the BAO deviation can be NEC-consistent at some redshift and a region where it is consistent at no redshift.\n  quote: \"For currently measured parameter values, this line approximately corresponds to wa ≈ −4(1 + w0), though it is not exactly a straight line.\"\n  loc: \"Sec. III\"\n- claim: Three of the DESI DR1 redshift bins have central values inside the NEC exclusion region relative to a fixed Planck PR3 fiducial LCDM, with any deviation from LCDM lying mainly in the D_M < D_M^Lambda direction (the text labels the middle bin LRG3+ELG2, while Fig. 3 labels it LRG3+ELG1).\n  quote: \"For three of the redshift bins – LRG2, LRG3+ELG2, and ELG2 – the data point centres lie within the exclusion region.\"\n  loc: \"Sec. IV\"\n- claim: Because the data-favoured part of the (w0, wa) plane is where CPL predicts the wrong sign of deviation at z > 0.5, the CPL contours carry no consistent information about NEC-consistent models beyond what LCDM already gives.\n  quote: \"The constraint contours in the CPL plane therefore have no consistent interpretation in terms of additional information from BAO\"\n  loc: \"Sec. IV\"\n\n## Methods\n- Analytic derivation: flat FRW, non-interacting dark energy, fixed non-dark-energy parameters (theta_*, Omega_m h^2, Omega_b h^2) so that D_M(z_*) is fixed; the NEC (d rho_de/dz >= 0) plus the Friedmann equation gives a derivative bound on D_H and the inequalities of Table I on D_H, D_M, D_V and F_AP relative to LCDM, with the monotonicity of D_H/D_H^Lambda proved in Appendix A.\n- CPL mapping: for each (w0, wa) at fixed theta_* and Planck-like parameters, compute the sign of the predicted deviation of D_M from LCDM at each redshift and draw the redshift-dependent consistency lines plus the wa = -(1+w0) and wa ~ -4(1+w0) boundaries (Fig. 2).\n- Data comparison: plot the DESI DR1 BAO points in the D_H/D_H^Lambda vs D_M/D_M^Lambda and D_V/D_V^Lambda vs F_AP/F_AP^Lambda planes against the exclusion regions, using Planck PR3 best-fit LCDM as fiducial, with the DESI BAO+CMB best-fit CPL track overlaid (Fig. 3).\n- Parameter inference with Cobaya, camb and GetDist: a Gaussian early-LCDM Planck NPIPE (PR4) likelihood on theta_*, Omega_c h^2, Omega_b h^2 (chains of Lemos and Lewis), DESI BAO likelihoods per redshift, one massive neutrino of 0.06 eV, and optionally Pantheon+, Union3 or DES Y5 supernovae; priors on w0 and wa listed in Table II (Figs. 4 and 6).\n- Toy NEC-consistent model w(a) = max(w0 + wa(1-a), -1), implemented by modifying camb, to show how constraints and degeneracy directions change when NEC violation is forbidden (Fig. 5).\n\n## Data\n- DESI DR1 BAO measurements (DESI 2024 VI, arXiv:2404.03002) at seven effective redshifts, 0.295 <= z_eff <= 2.33: 2D D_M/r_drag and D_H/r_drag with covariance in five bins (LRG1 z=0.51, LRG2 z=0.706, LRG3+ELG1 z=0.93, ELG2 z=1.317, Lya QSO z=2.33) plus D_V/r_drag only for BGS (z=0.295) and QSO (z=1.491); Sec. I phrases the range loosely as 0.2 <~ z <~ 2.\n- Planck 2018 PR3 best-fit parameters as the fiducial LCDM reference for Fig. 3, and Planck PR4 (NPIPE) early-LCDM constraints on theta_*, Omega_c h^2, Omega_b h^2 for the chains.\n- Type Ia supernova compilations Pantheon+, Union3 and DES Y5, added one at a time in the joint CPL and Max-CPL fits.\n\n## Limitations\n- limit: The analysis is purely geometric (acoustic standard ruler) and does not include growth-of-structure or other probes.\n  quote: \"While we have focused here on geometric constraints from the acoustic standard ruler, a complete picture will require combining these results with constraints from structure growth and other cosmological probes.\"\n  loc: \"Sec. V\"\n- limit: The authors stress that the CPL parameterization they interpret is itself unphysical, so results expressed in (w0, wa) need careful interpretation.\n  quote: \"Although the CPL parameterization is convenient and easy to implement, it is fundamentally unphysical, so results using it must be interpreted with care.\"\n  loc: \"Sec. V\"\n- limit: The whole argument rests on assuming the null energy condition holds for the background, and the paper acknowledges there is no proof that it must.\n  quote: \"Although there is no clear reason that the null-energy condition cannot be violated at the level of the background cosmology\"\n  loc: \"Sec. V\"\n- limit: Part of the roughly two-sigma offset of the joint posterior into the excluded region is attributed to a parameter-volume effect, and in the Max-CPL toy model the marginalized constraints depend strongly on the prior ranges.\n  quote: \"where the model is nearly independent of wa, so marginalized constraints depend strongly on the prior ranges.\"\n  loc: \"Sec. IV\"\n\n## Open questions\n- How to robustly identify physically consistent deviations from LCDM when acoustic-scale constraints are c"
+}

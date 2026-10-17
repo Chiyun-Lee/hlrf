@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import abstract as graphical
-from . import cards, db, extract, feed, llm, memory, pins, pitch, proof, quiz, review, revision, summarize, tutor
+from . import cards, club, db, extract, feed, llm, memory, pins, pitch, proof, quiz, review, revision, summarize, tutor
 from .levels import DEFAULT, Level
 from .schemas import GraphicalAbstract, LearnerProfile, Note, PageSummary, Paper, PaperPins, Pitch, Proof, SummaryCards
 
@@ -507,6 +507,8 @@ def feed_summaries(req: SummariesRequest) -> dict[str, Pitch]:
                 found[p.id] = p
     return found
 
+
+app.include_router(club.router)  # Journal club (app/club.py): /club/cards, /club/runs
 
 # The paper browser (../web). Mounted last so the API routes above take precedence.
 app.mount("/", StaticFiles(directory=Path(__file__).parent.parent.parent / "web", html=True), name="web")

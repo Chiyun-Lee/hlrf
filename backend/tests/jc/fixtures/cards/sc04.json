@@ -1,0 +1,48 @@
+{
+  "id": "sc04",
+  "citekey": "moreno2021overcorrection",
+  "title": "Anchor alignment erases rare populations: a simulation study of over-correction",
+  "year": 2021,
+  "date": "2021-06-02",
+  "authors": [
+    "L. Moreno",
+    "A. Petrov"
+  ],
+  "abstract": "We simulate batches in which a rare population is present in only one batch and show that anchor-based alignment removes it in nine of ten simulations. Over-correction grows with the number of anchors used.",
+  "claims": [
+    {
+      "text": "Anchor alignment removed the batch-unique rare type in nine of ten simulations.",
+      "quote": {
+        "paper_id": "sc04",
+        "text": "Anchor-based alignment removed the rare cell type in nine of ten simulated batches where that population was present in only one batch.",
+        "loc": "p4 §3.1"
+      }
+    },
+    {
+      "text": "Over-correction grows with the anchor count.",
+      "quote": {
+        "paper_id": "sc04",
+        "text": "Over-correction increases with the number of anchors, so the default anchor count erases populations smaller than two percent of cells.",
+        "loc": "p5 §3.2"
+      }
+    }
+  ],
+  "methods": [
+    "simulation of batch effects",
+    "anchor-based alignment"
+  ],
+  "data": [
+    "ten simulated batch pairs"
+  ],
+  "limits": [
+    {
+      "text": "Simulated batch effects are a single multiplicative factor.",
+      "quote": {
+        "paper_id": "sc04",
+        "text": "Our simulations introduce batch effects as a single multiplicative gene-wise factor, which is simpler than real protocol differences.",
+        "loc": "p8 §5"
+      }
+    }
+  ],
+  "fulltext_excerpt": "When a population exists in only one batch its cells have no true partner, and the nearest anchor pulls them into a different cluster. Anchor-based alignment removed the rare cell type in nine of ten simulated batches where that population was present in only one batch. The surviving case had a rare population of over five percent of cells. Over-correction increases with the number of anchors, so the default anchor count erases populations smaller than two percent of cells. Reducing the anchor count restores the population at the cost of residual batch effect elsewhere. We stress that the simulation is deliberately simple. Our simulations introduce batch effects as a single multiplicative gene-wise factor, which is simpler than real protocol differences. Real data may show both stronger and weaker over-correction depending on the protocol pair."
+}

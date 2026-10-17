@@ -1,0 +1,56 @@
+{
+  "id": "sc05",
+  "citekey": "tan2022groundtruth",
+  "title": "No winner: a benchmark of eight integration methods on eight datasets",
+  "year": 2022,
+  "date": "2022-02-15",
+  "authors": [
+    "W. Tan",
+    "S. Berglund"
+  ],
+  "abstract": "We benchmark eight batch integration methods on eight datasets with five metrics. No method wins overall, mixing and conservation metrics trade off, and rankings depend on the labels used for scoring.",
+  "claims": [
+    {
+      "text": "No method ranked first on more than two of five metrics.",
+      "quote": {
+        "paper_id": "sc05",
+        "text": "No tested method ranked first on more than two of the five metrics across the eight datasets in our benchmark.",
+        "loc": "p5 §3.1"
+      }
+    },
+    {
+      "text": "Mixing and conservation metrics are negatively correlated.",
+      "quote": {
+        "paper_id": "sc05",
+        "text": "Metrics that reward batch mixing and metrics that reward biological conservation are negatively correlated across methods.",
+        "loc": "p6 §3.2"
+      }
+    },
+    {
+      "text": "Rankings change when labels are re-annotated.",
+      "quote": {
+        "paper_id": "sc05",
+        "text": "Method rankings changed in four of eight datasets when the cell-type labels used for scoring were re-annotated by a second curator.",
+        "loc": "p7 §3.4"
+      }
+    }
+  ],
+  "methods": [
+    "benchmark of eight methods",
+    "five mixing and conservation metrics"
+  ],
+  "data": [
+    "eight public scRNA-seq datasets"
+  ],
+  "limits": [
+    {
+      "text": "No experimental ground truth separates batch from biology.",
+      "quote": {
+        "paper_id": "sc05",
+        "text": "Without an experimental ground truth that separates batch effect from biological signal, every conservation metric depends on the labels it is scored against.",
+        "loc": "p9 §5"
+      }
+    }
+  ],
+  "fulltext_excerpt": "We ran every method with default settings and scored the output with two mixing and three conservation metrics. No tested method ranked first on more than two of the five metrics across the eight datasets in our benchmark. Linear and deep methods were interleaved in the overall ranking. Metrics that reward batch mixing and metrics that reward biological conservation are negatively correlated across methods. A method that mixes batches perfectly can only do so by also mixing cell types. The labels themselves are a source of variance. Method rankings changed in four of eight datasets when the cell-type labels used for scoring were re-annotated by a second curator. This sensitivity is rarely reported. Without an experimental ground truth that separates batch effect from biological signal, every conservation metric depends on the labels it is scored against."
+}

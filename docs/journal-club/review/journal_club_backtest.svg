@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 460" width="1000" height="460" font-family="Helvetica, Arial, sans-serif">
+  <title>Library Journal Club — backtest</title>
+  <desc>Figure 2, the backtest. The library is split at a date T. Only the papers before T go into the club, which outputs directions. The papers after T are held out as the answer key. A judge checks each direction against them and reports a hit rate. The same papers go through one LLM call with no discussion as a baseline. A leakage guard lists three rules.</desc>
+  <style>
+    .t { font-size: 12px; fill: #1f2937; }
+    .ts { font-size: 10.5px; fill: #4b5563; }
+    .tb { font-size: 13.5px; font-weight: 700; fill: #1f2937; }
+    .title { font-size: 20px; font-weight: 700; fill: #111827; }
+    .sub { font-size: 12px; fill: #4b5563; }
+    .lib { fill: #d5e8d4; stroke: #82b366; stroke-width: 1.5; }
+    .students { fill: #dae8fc; stroke: #6c8ebf; stroke-width: 1.5; }
+    .held { fill: #f5f5f5; stroke: #666666; stroke-width: 1.5; stroke-dasharray: 5 3; }
+    .club { fill: #eef3fb; stroke: #6b7280; stroke-width: 1.5; }
+    .base { fill: #ffffff; stroke: #9ca3af; stroke-width: 1.5; }
+    .evalb { fill: #e8f5e9; stroke: #2e7d32; stroke-width: 2; }
+    .result { fill: #ffffff; stroke: #2e7d32; stroke-width: 1.5; }
+    .edge { fill: none; stroke: #374151; stroke-width: 2; }
+    .key { fill: none; stroke: #2e7d32; stroke-width: 3; }
+    .keyt { fill: #1b5e20; font-weight: 700; font-size: 12px; }
+    .num { fill: #111827; }
+    .numt { font-size: 10px; font-weight: 700; fill: #ffffff; }
+  </style>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#374151"/></marker>
+    <marker id="ahg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#2e7d32"/></marker>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M3 3h8v18H3z"/><path d="M13 3h8v18h-8z"/></symbol>
+    <symbol id="i-docs" viewBox="0 0 24 24"><path d="M8 5h8l4 4v12H8z" stroke-width="1.6"/><path d="M4 2h8v3H8v14H4z" stroke-width="1.6"/><path d="M11 13h6M11 16h6" fill="none" stroke-width="1.6"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke-width="2.2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke-width="2.4"/><path d="M7.5 12.5l3 3 6-7" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-cycle" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7" fill="none" stroke-width="2.6" stroke-linecap="round"/><path d="M20 3v5h-5" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="460" fill="#ffffff"/>
+
+  <text x="30" y="36" class="title">Figure 2 · Library Journal Club — the backtest</text>
+  <text x="30" y="56" class="sub">Did the papers before T point to what the papers after T did? One number, next to a baseline.</text>
+
+  <!-- Library -->
+  <rect x="30" y="150" width="190" height="64" rx="8" class="lib"/>
+  <use href="#i-book" x="42" y="167" width="30" height="30" fill="#82b366"/>
+  <text x="82" y="174" class="tb">Your library</text>
+  <text x="82" y="191" class="ts">split once at a date T</text>
+  <text x="82" y="205" class="ts">(e.g. T = 2 years ago)</text>
+
+  <!-- Before T -->
+  <rect x="270" y="90" width="190" height="70" rx="8" class="students"/>
+  <use href="#i-docs" x="282" y="110" width="30" height="30" fill="#ffffff" stroke="#6c8ebf"/>
+  <text x="322" y="114" class="tb">Before T</text>
+  <text x="322" y="131" class="ts">8 papers → the club</text>
+  <text x="322" y="145" class="ts">(Figure 1)</text>
+
+  <!-- After T -->
+  <rect x="270" y="270" width="190" height="70" rx="8" class="held"/>
+  <use href="#i-lock" x="282" y="290" width="30" height="30" fill="#666666" stroke="#666666"/>
+  <text x="322" y="294" class="tb">After T</text>
+  <text x="322" y="311" class="ts">held out: never shown</text>
+  <text x="322" y="325" class="ts">to the students</text>
+
+  <path d="M220 182H245V125H270" class="edge" marker-end="url(#ah)"/>
+  <path d="M220 182H245V305H270" class="edge" marker-end="url(#ah)"/>
+
+  <!-- Club (black box) -->
+  <rect x="510" y="76" width="200" height="98" rx="8" class="club"/>
+  <use href="#i-cycle" x="522" y="100" width="28" height="28" fill="none" stroke="#374151"/>
+  <text x="560" y="100" class="tb">The club</text>
+  <text x="560" y="117" class="ts">map → debate → directions</text>
+  <text x="560" y="131" class="ts">output: 5–10 directions,</text>
+  <text x="560" y="145" class="ts">each with before-T quotes</text>
+  <text x="560" y="159" class="ts">and a confidence</text>
+  <path d="M460 125H510" class="edge" marker-end="url(#ah)"/>
+
+  <!-- Baseline -->
+  <rect x="510" y="190" width="200" height="60" rx="8" class="base"/>
+  <text x="522" y="211" class="tb">Baseline</text>
+  <text x="522" y="228" class="ts">one LLM call, same 8 papers,</text>
+  <text x="522" y="242" class="ts">no discussion: "list 10 directions"</text>
+  <path d="M485 125V220H510" class="edge" marker-end="url(#ah)"/>
+
+  <!-- Judge -->
+  <rect x="760" y="130" width="210" height="150" rx="8" class="evalb"/>
+  <use href="#i-check" x="772" y="150" width="30" height="30" fill="none" stroke="#2e7d32"/>
+  <text x="812" y="155" class="keyt">Judge</text>
+  <text x="812" y="172" class="ts">for each direction:</text>
+  <text x="812" y="186" class="ts">does an after-T paper do it?</text>
+  <text x="812" y="200" class="ts">hit / partial / miss, with the</text>
+  <text x="812" y="214" class="ts">after-T paper named</text>
+  <text x="772" y="238" class="ts">one LLM call per direction,</text>
+  <text x="772" y="252" class="ts">a different model from the PI</text>
+  <text x="772" y="266" class="ts">~20 calls</text>
+
+  <path d="M710 125H735V190H760" class="key" marker-end="url(#ahg)"/>
+  <path d="M710 220H735V220H760" class="edge" marker-end="url(#ah)"/>
+  <path d="M460 305H735V250H760" class="key" marker-end="url(#ahg)"/>
+  <text x="600" y="320" class="keyt" text-anchor="middle">the answer key, opened only here</text>
+
+  <!-- Result -->
+  <rect x="760" y="310" width="210" height="64" rx="8" class="result"/>
+  <text x="772" y="331" class="tb">Result</text>
+  <text x="772" y="348" class="ts">club: hits / directions, e.g. 4 of 8</text>
+  <text x="772" y="362" class="ts">baseline: e.g. 2 of 10. Report both.</text>
+  <path d="M865 280V310" class="edge" marker-end="url(#ah)"/>
+
+  <!-- Leakage guard -->
+  <text x="30" y="400" class="tb">Leakage guard: the model may know the after-T papers from training</text>
+  <text x="30" y="418" class="ts">1. A direction counts only if it rests on quoted before-T passages; a correct guess with no evidence is a miss.</text>
+  <text x="30" y="433" class="ts">2. Where you can, score on after-T papers newer than the model's training cutoff.</text>
+  <text x="30" y="448" class="ts">3. Always report the baseline next to the club. The claim is that the conversation added something; the gap is the evidence.</text>
+</svg>

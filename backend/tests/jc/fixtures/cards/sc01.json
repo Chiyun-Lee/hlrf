@@ -1,0 +1,56 @@
+{
+  "id": "sc01",
+  "citekey": "kim2019batchalign",
+  "title": "BatchAlign: anchor-based linear alignment of single-cell transcriptomes across batches",
+  "year": 2019,
+  "date": "2019-03-04",
+  "authors": [
+    "H. Kim",
+    "R. Alvarez"
+  ],
+  "abstract": "We present BatchAlign, a linear method that aligns batches of single-cell RNA-seq data through mutual anchors. On twelve public datasets it removes batch effects while keeping cluster structure and every annotated cell type, and it runs on a laptop.",
+  "claims": [
+    {
+      "text": "Anchor alignment removes batch effects and keeps cluster structure.",
+      "quote": {
+        "paper_id": "sc01",
+        "text": "Anchor-based linear alignment removes batch effects while preserving within-batch cluster structure in all twelve datasets we tested.",
+        "loc": "p4 §3.1"
+      }
+    },
+    {
+      "text": "Every annotated cell type survives correction, including batch-unique ones.",
+      "quote": {
+        "paper_id": "sc01",
+        "text": "BatchAlign recovers every annotated cell type after correction, including populations present in only one batch.",
+        "loc": "p5 §3.2"
+      }
+    },
+    {
+      "text": "Runs on a laptop in minutes.",
+      "quote": {
+        "paper_id": "sc01",
+        "text": "Alignment on 2,000 highly variable genes runs in under four minutes for 200,000 cells on a laptop CPU.",
+        "loc": "p7 §3.4"
+      }
+    }
+  ],
+  "methods": [
+    "mutual anchor detection",
+    "linear alignment"
+  ],
+  "data": [
+    "twelve public scRNA-seq datasets"
+  ],
+  "limits": [
+    {
+      "text": "Assumes batches share most cell types.",
+      "quote": {
+        "paper_id": "sc01",
+        "text": "Our evaluation assumes that batches share most cell types, and we have not tested the method on batches with disjoint composition.",
+        "loc": "p9 §5"
+      }
+    }
+  ],
+  "fulltext_excerpt": "We detect mutual anchors between batches and fit a linear correction from them. Anchor-based linear alignment removes batch effects while preserving within-batch cluster structure in all twelve datasets we tested. Clusters identified before correction were recovered after it with a median adjusted Rand index of 0.94. BatchAlign recovers every annotated cell type after correction, including populations present in only one batch. The method is also cheap. Alignment on 2,000 highly variable genes runs in under four minutes for 200,000 cells on a laptop CPU. Memory use stays below four gigabytes at that scale. Our evaluation assumes that batches share most cell types, and we have not tested the method on batches with disjoint composition."
+}
