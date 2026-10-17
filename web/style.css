@@ -138,7 +138,8 @@ input[type="search"] { width: 100%; }
 
 /* Methods pins (pins.js): round buttons beside figures and tables, ■ data and ● method in ink, ▲ concern in --warn.
    At rest only the glyph shows; hover or focus slides the title out; a click opens a two-level card. */
-.pins { position: absolute; z-index: 2; display: flex; align-items: flex-start; gap: 4px; padding: 1px; } /* sizes: PIN_SIZE in pins.js */
+/* Above every note (notes reach z-index 3 while edited), so a grown figure note never swallows the buttons */
+.pins { position: absolute; z-index: 4; display: flex; align-items: flex-start; gap: 4px; padding: 1px; } /* sizes: PIN_SIZE in pins.js */
 .pins.column { flex-direction: column; }
 .pins.column.grow-left { align-items: flex-end; }
 .pin { display: inline-flex; align-items: center; justify-content: center; height: 22px; min-width: 22px; box-sizing: border-box;
@@ -153,7 +154,7 @@ input[type="search"] { width: 100%; }
 .pin.concern:is(:hover, [aria-expanded="true"]) { background: var(--warn); color: #fff; }
 .pin:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.pin-card { position: absolute; z-index: 3; width: min(22em, calc(100% - 8px)); box-sizing: border-box; padding: 12px 14px 10px;
+.pin-card { position: absolute; z-index: 5; width: min(22em, calc(100% - 8px)); box-sizing: border-box; padding: 12px 14px 10px;
   background: var(--card); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 28px rgba(31, 47, 122, 0.16);
   font: 13px/1.45 system-ui, -apple-system, sans-serif; color: var(--text); }
 .pin-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
