@@ -522,3 +522,13 @@ input[type="search"] { width: 100%; }
 .rv-strength i:nth-child(4) { height: 81%; } .rv-strength i:nth-child(5) { height: 100%; }
 .rv-strength i.on { background: #58cc02; }
 @media (max-width: 560px) { .rv-today { grid-template-columns: 1fr; } .rv-paper { flex-wrap: wrap; } }
+
+/* Library: "Add a paper" (paste a link, upload or drop a PDF) */
+.add-paper { margin: 6px 0 18px; padding: 12px 14px; background: var(--card); border: 1.5px dashed var(--border); border-radius: 12px; }
+.add-paper.dragging { border-color: var(--ink); background: #f3f5fd; }
+.add-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.add-row input[type="text"] { flex: 1 1 260px; min-width: 0; padding: 8px 10px; font: inherit; border: 1px solid var(--border); border-radius: 8px; }
+.add-file { display: inline-flex; align-items: center; }
+.add-hint { margin-top: 6px; }
+.add-status { margin-top: 6px; color: var(--ink); min-height: 1em; }
+.btn[aria-pressed="true"]#mine { background: #e8f6dc; border-color: #58a700; }

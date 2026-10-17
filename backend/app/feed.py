@@ -193,6 +193,11 @@ def store_mine(ids: list[str]) -> tuple[list[str], list[str]]:
     return found, [i for i in ids if i not in s.stored]
 
 
+def is_mine(arxiv_id: str | None) -> bool:
+    """Whether this arXiv paper is one of your papers (the reader's "Your papers" button)."""
+    return bool(arxiv_id) and (arxiv_id, "mine") in db.signals()
+
+
 def remove_mine(paper_id: str) -> None:
     """Remove one of your papers; a linked profile won't add it back."""
     db.clear_signal(paper_id, "mine")
