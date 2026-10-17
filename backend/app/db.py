@@ -1,5 +1,6 @@
-"""SQLite storage: one row per paper (the record as JSON, plus the PDF when we have it) and cached page summaries.
-For you adds arXiv papers, your signals on them (up, down, click, mine) and cached pitches."""
+"""SQLite storage: one row per paper (the record as JSON, plus the PDF when we have it), page summaries, graphical
+abstracts and summary cards cached per reading level (app/levels.py), and the learning memory. For you adds arXiv
+papers, your signals on them (up, down, click, mine) and cached pitches."""
 
 import os
 import sqlite3
@@ -9,7 +10,9 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from .schemas import ArxivPaper, GraphicalAbstract, PageSummary, Paper, Pitch
+import json
+
+from .schemas import ArxivPaper, GraphicalAbstract, LearnerProfile, PageSummary, Paper, Pitch, QuizQuestion, SummaryCards
 
 DB_PATH = os.environ.get("PAPERS_DB", Path(__file__).parent.parent / "papers.db")  # override for tests/demos
 
@@ -18,8 +21,33 @@ lock = threading.Lock()  # FastAPI runs endpoints in threads; serialise access t
 conn.execute("CREATE TABLE IF NOT EXISTS papers (id INTEGER PRIMARY KEY, url TEXT, title TEXT, doi TEXT, data TEXT, pdf BLOB)")
 if "pdf" not in [col[1] for col in conn.execute("PRAGMA table_info(papers)")]:  # databases from before PDFs were kept
     conn.execute("ALTER TABLE papers ADD COLUMN pdf BLOB")
-conn.execute("CREATE TABLE IF NOT EXISTS summaries (paper_id INTEGER, page INTEGER, data TEXT, PRIMARY KEY (paper_id, page))")
-conn.execute("CREATE TABLE IF NOT EXISTS abstracts (paper_id INTEGER PRIMARY KEY, data TEXT)")
+
+
+def leveled_table(name: str, create: str) -> None:
+    """Create a table keyed by reading level. Tables from before levels existed are moved over: their notes were
+    written for lay readers, so they become the outreach level."""
+    columns = [col[1] for col in conn.execute(f"PRAGMA table_info({name})")]
+    with conn:
+        if columns and "level" not in columns:
+            conn.execute(f"ALTER TABLE {name} RENAME TO {name}_old")
+            conn.execute(create)
+            conn.execute(f"INSERT INTO {name} SELECT *, 'outreach' FROM {name}_old")
+            conn.execute(f"DROP TABLE {name}_old")
+        conn.execute(create)
+
+
+leveled_table("summaries", "CREATE TABLE IF NOT EXISTS summaries (paper_id INTEGER, page INTEGER, data TEXT, level TEXT, PRIMARY KEY (paper_id, page, level))")
+leveled_table("abstracts", "CREATE TABLE IF NOT EXISTS abstracts (paper_id INTEGER, data TEXT, level TEXT, PRIMARY KEY (paper_id, level))")
+# Learning memory (app/memory.py): what the reader did, and the profile distilled from it. One reader per install.
+conn.execute("CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, paper_id INTEGER, kind TEXT, data TEXT, created TEXT DEFAULT CURRENT_TIMESTAMP)")
+conn.execute("CREATE TABLE IF NOT EXISTS profile (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT)")
+# Revision (app/revision.py): every quiz question, with its spaced-repetition box and due day, and XP per day.
+conn.execute(
+    "CREATE TABLE IF NOT EXISTS questions (id INTEGER PRIMARY KEY, paper_id INTEGER, level TEXT, prompt TEXT, data TEXT,"
+    " box INTEGER DEFAULT 0, due TEXT, UNIQUE (paper_id, prompt))"
+)
+conn.execute("CREATE TABLE IF NOT EXISTS xp (day TEXT PRIMARY KEY, points INTEGER)")
+leveled_table("cards", "CREATE TABLE IF NOT EXISTS cards (paper_id INTEGER, data TEXT, level TEXT, PRIMARY KEY (paper_id, level))")
 conn.execute("CREATE TABLE IF NOT EXISTS paper_pins (paper_id INTEGER PRIMARY KEY, data TEXT)")  # an agent review's methods pins
 conn.execute("CREATE TABLE IF NOT EXISTS pitches (arxiv_id TEXT PRIMARY KEY, data TEXT)")
 # listed: came from a daily listing (rather than fetched by id, like your own older papers), so it's in a day's feed
@@ -80,32 +108,126 @@ def delete(paper_id: int) -> bool:
         conn.execute("DELETE FROM summaries WHERE paper_id = ?", (paper_id,))
         conn.execute("DELETE FROM abstracts WHERE paper_id = ?", (paper_id,))
         conn.execute("DELETE FROM paper_pins WHERE paper_id = ?", (paper_id,))
+        conn.execute("DELETE FROM cards WHERE paper_id = ?", (paper_id,))
+        conn.execute("DELETE FROM questions WHERE paper_id = ?", (paper_id,))
     return cur.rowcount > 0
 
 
-def get_summary(paper_id: int, page: int) -> PageSummary | None:
+def get_summary(paper_id: int, page: int, level: str) -> PageSummary | None:
     with lock:
-        row = conn.execute("SELECT data FROM summaries WHERE paper_id = ? AND page = ?", (paper_id, page)).fetchone()
+        row = conn.execute(
+            "SELECT data FROM summaries WHERE paper_id = ? AND page = ? AND level = ?", (paper_id, page, level)
+        ).fetchone()
     try:
         return PageSummary.model_validate_json(row[0]) if row else None
     except ValidationError:  # cached in an older format; regenerate
         return None
 
 
-def save_summary(paper_id: int, page: int, summary: PageSummary) -> None:
+def save_summary(paper_id: int, page: int, level: str, summary: PageSummary) -> None:
     with lock, conn:
-        conn.execute("INSERT OR REPLACE INTO summaries VALUES (?, ?, ?)", (paper_id, page, summary.model_dump_json()))
+        conn.execute(
+            "INSERT OR REPLACE INTO summaries (paper_id, page, data, level) VALUES (?, ?, ?, ?)",
+            (paper_id, page, summary.model_dump_json(), level),
+        )
 
 
-def get_abstract(paper_id: int) -> GraphicalAbstract | None:
+def get_abstract(paper_id: int, level: str) -> GraphicalAbstract | None:
     with lock:
-        row = conn.execute("SELECT data FROM abstracts WHERE paper_id = ?", (paper_id,)).fetchone()
+        row = conn.execute("SELECT data FROM abstracts WHERE paper_id = ? AND level = ?", (paper_id, level)).fetchone()
     return GraphicalAbstract.model_validate_json(row[0]) if row else None
 
 
-def save_abstract(paper_id: int, abstract: GraphicalAbstract) -> None:
+def abstract_levels(paper_id: int) -> list[str]:
+    """The reading levels this paper has a graphical abstract for."""
+    with lock:
+        return [r[0] for r in conn.execute("SELECT level FROM abstracts WHERE paper_id = ?", (paper_id,))]
+
+
+def save_abstract(paper_id: int, level: str, abstract: GraphicalAbstract) -> None:
     with lock, conn:
-        conn.execute("INSERT OR REPLACE INTO abstracts VALUES (?, ?)", (paper_id, abstract.model_dump_json()))
+        conn.execute(
+            "INSERT OR REPLACE INTO abstracts (paper_id, data, level) VALUES (?, ?, ?)",
+            (paper_id, abstract.model_dump_json(), level),
+        )
+
+
+def add_event(paper_id: int | None, kind: str, data: dict) -> None:
+    with lock, conn:
+        conn.execute("INSERT INTO events (paper_id, kind, data) VALUES (?, ?, ?)", (paper_id, kind, json.dumps(data)))
+
+
+def events(limit: int = 300) -> list[dict]:
+    """Most recent first, with the paper's title (None once the paper is deleted)."""
+    with lock:
+        rows = conn.execute(
+            "SELECT e.id, e.paper_id, p.title, e.kind, e.data, e.created FROM events e LEFT JOIN papers p ON p.id = e.paper_id"
+            " ORDER BY e.id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [{"id": i, "paper_id": pid, "paper": t, "kind": k, "data": json.loads(d), "created": c} for i, pid, t, k, d, c in rows]
+
+
+def get_profile() -> LearnerProfile:
+    with lock:
+        row = conn.execute("SELECT data FROM profile WHERE id = 1").fetchone()
+    return LearnerProfile.model_validate_json(row[0]) if row else LearnerProfile()
+
+
+def save_profile(profile: LearnerProfile) -> None:
+    with lock, conn:
+        conn.execute("INSERT OR REPLACE INTO profile VALUES (1, ?)", (profile.model_dump_json(),))
+
+
+def forget_everything() -> None:
+    with lock, conn:
+        conn.execute("DELETE FROM events")
+        conn.execute("DELETE FROM profile")
+
+
+def add_questions(paper_id: int, level: str, questions: list[QuizQuestion], due: str) -> list[int]:
+    """Bank a quiz's questions (a question already banked for the paper keeps its progress); returns their ids."""
+    with lock, conn:
+        conn.executemany(
+            "INSERT OR IGNORE INTO questions (paper_id, level, prompt, data, due) VALUES (?, ?, ?, ?, ?)",
+            [(paper_id, level, q.prompt, q.model_dump_json(), due) for q in questions],
+        )
+        return [
+            conn.execute("SELECT id FROM questions WHERE paper_id = ? AND prompt = ?", (paper_id, q.prompt)).fetchone()[0]
+            for q in questions
+        ]
+
+
+def _question(row) -> dict:
+    i, pid, level, data, box, due = row
+    return {"id": i, "paper_id": pid, "level": level, "question": QuizQuestion.model_validate_json(data), "box": box, "due": due}
+
+
+def questions() -> list[dict]:
+    with lock:
+        rows = conn.execute("SELECT id, paper_id, level, data, box, due FROM questions").fetchall()
+    return [_question(r) for r in rows]
+
+
+def get_question(question_id: int) -> dict | None:
+    with lock:
+        row = conn.execute("SELECT id, paper_id, level, data, box, due FROM questions WHERE id = ?", (question_id,)).fetchone()
+    return _question(row) if row else None
+
+
+def set_question_progress(question_id: int, box: int, due: str) -> None:
+    with lock, conn:
+        conn.execute("UPDATE questions SET box = ?, due = ? WHERE id = ?", (box, due, question_id))
+
+
+def add_xp(day: str, points: int) -> None:
+    with lock, conn:
+        conn.execute("INSERT INTO xp VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET points = points + excluded.points", (day, points))
+
+
+def xp_days() -> dict[str, int]:
+    with lock:
+        return dict(conn.execute("SELECT day, points FROM xp"))
 
 
 def get_paper_pins(paper_id: int) -> "PaperPins | None":
@@ -202,3 +324,25 @@ def get_meta(key: str) -> str | None:
 def set_meta(key: str, value: str) -> None:
     with lock, conn:
         conn.execute("INSERT OR REPLACE INTO feed_meta VALUES (?, ?)", (key, value))
+
+
+def get_cards(paper_id: int, level: str) -> SummaryCards | None:
+    with lock:
+        row = conn.execute("SELECT data FROM cards WHERE paper_id = ? AND level = ?", (paper_id, level)).fetchone()
+    try:
+        return SummaryCards.model_validate_json(row[0]) if row else None
+    except ValidationError:  # saved in an older format; remake
+        return None
+
+
+def card_levels(paper_id: int) -> list[str]:
+    """The reading levels this paper has summary cards for."""
+    with lock:
+        return [r[0] for r in conn.execute("SELECT level FROM cards WHERE paper_id = ?", (paper_id,))]
+
+
+def save_cards(paper_id: int, level: str, cards: SummaryCards) -> None:
+    with lock, conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO cards (paper_id, data, level) VALUES (?, ?, ?)", (paper_id, cards.model_dump_json(), level)
+        )

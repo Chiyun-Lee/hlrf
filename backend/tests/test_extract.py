@@ -5,7 +5,8 @@ import pytest
 
 from app.llm import answer_text
 from app.proof import locate
-from app.summarize import parse_note_id
+from app.schemas import Mark
+from app.summarize import parse_note_id, to_page_scale, valid_mark
 from app.schemas import Paper
 
 
@@ -37,6 +38,12 @@ def test_note_ids_and_quote_lookup():
     start, end = locate(text, "allows for significantly more parallelization")
     assert text[start:end].startswith("allows") and text[start:end].endswith("parallelization")
     assert locate(text, "not in there") is None
+
+
+def test_marks_move_from_pixels_to_page_scale():
+    m = Mark(shape="circle", box=[100, 200, 300, 400], text="here", text_at=[50, 60])
+    assert valid_mark(m, 1000, 2000) and not valid_mark(m, 250, 2000)
+    assert to_page_scale(m, 1000, 2000).box == [100, 100, 300, 200]
 
 
 # Live end-to-end check against a hand-labelled paper. Costs API credit.

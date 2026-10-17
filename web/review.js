@@ -114,7 +114,7 @@ function resetFeed(r) {
 // The header button mirrors the run: "Reviewing · 42%" with a thin fill along its bottom edge (style.css).
 function renderButton(r) {
   const [s, state] = [r.status, buttonState(r)];
-  r.button.className = `toggle-notes review-button ${state}`;
+  r.button.className = `btn review-button ${state}`;
   r.button.textContent =
     state === "new" ? "Run paper2agent review" : state === "done" ? "Agent-reviewed ✓" : label(s);
   r.button.style.setProperty("--progress", state === "running" ? s.progress : 0);

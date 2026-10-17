@@ -173,7 +173,7 @@ function summarise(doc, targets, verdict) {
   head.insertAdjacentHTML("beforeend", `
     <div class="pins-summary">
       <p class="pins-counts"><b>Agent-reviewed</b> · ${targets.length} ${what} · ${concerns} ${concerns === 1 ? "concern" : "concerns"}
-        <button class="toggle-notes pins-toggle"></button></p>
+        <button class="btn pins-toggle"></button></p>
       ${verdict ? `<p class="pins-verdict">${esc(verdict)}</p>` : ""}
     </div>`);
   const toggle = head.querySelector(".pins-toggle");

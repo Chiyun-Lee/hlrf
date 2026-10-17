@@ -54,6 +54,16 @@ class Paper(PaperHeader):
         return [{"blocks": [{"text": t} for t in p.split("\n\n") if t.strip()]} if isinstance(p, str) else p for p in pages]
 
 
+class Mark(BaseModel):
+    """A doodle on a figure: a circle around a feature, or an arrow to it, with a short handwritten note.
+    Coordinates are 0-1000 across the page's width and height (for abstract figures: across the cropped figure)."""
+
+    shape: Literal["circle", "arrow"]
+    box: list[float]  # [x0, y0, x1, y1] around the feature
+    text: str  # a few words
+    text_at: list[float]  # [x, y]: centre of the text, in empty space near the feature
+
+
 class Note(BaseModel):
     """One note laid over the blocks it covers, e.g. a section heading and all the paragraphs under it on this page."""
 
@@ -61,6 +71,7 @@ class Note(BaseModel):
     blocks: list[int]  # indices of the blocks covered
     heading: str | None = None  # short, playful title; a plain label for asides
     bullets: list[str] = []
+    marks: list[Mark] = []  # figure notes: doodles on the figure itself
 
 
 class PageSummary(BaseModel):
@@ -161,6 +172,7 @@ class AbstractFigure(BaseModel):
     image: str | None = None  # filled in by the backend: data: URI of the figure cropped from the PDF
     width: float | None = None
     height: float | None = None
+    marks: list[Mark] = []  # filled in by the backend: the figure note's doodles, in the crop's coordinates
 
 
 class GraphicalAbstract(BaseModel):
@@ -171,6 +183,67 @@ class GraphicalAbstract(BaseModel):
     flow: list[FlowStep]  # what was done and found, in order
     bullets: list[str]  # the handful of things worth remembering
     figures: list[AbstractFigure]  # one or two key figures
+
+
+class Stat(BaseModel):
+    value: str  # a headline number as printed, e.g. "0.45%"
+    label: str  # what it is, a few words
+
+
+class CardStep(BaseModel):
+    title: str  # e.g. "Measure BAO with 2x the volume"
+    detail: str  # one line of specifics
+
+
+class Branch(BaseModel):
+    title: str
+    points: list[str]
+
+
+class EvidenceRow(BaseModel):
+    claim: str
+    evidence: str  # the experiment, dataset or figure/table that supports it
+
+
+class ChartItem(BaseModel):
+    label: str
+    value: float
+    low: float | None = None  # error bar / interval, when the paper gives one
+    high: float | None = None
+    printed: str  # the number exactly as printed in the paper, e.g. "0.2975 ± 0.0086"; checked against the text
+
+
+class Chart(BaseModel):
+    """A simple comparison redrawn from numbers the paper states (drawn as a dot plot by web/cards.js)."""
+
+    title: str
+    axis: str  # what the values are, with units
+    source: str  # where in the paper, e.g. "Table 4"
+    caption: str  # one line: what to notice
+    items: list[ChartItem]
+
+
+class CardFigure(BaseModel):
+    figure: str  # which figure note, as "p<page>n<note>"
+    callout: str  # what to notice
+    image: str | None = None  # filled in by the backend, as for AbstractFigure
+    width: float | None = None
+    height: float | None = None
+
+
+class SummaryCards(BaseModel):
+    """A deck of summary cards for the whole paper (rendered by web/cards.js under the graphical abstract)."""
+
+    tldr: str
+    stats: list[Stat]
+    flow: list[CardStep]  # question -> what they did -> evidence -> conclusion
+    topic: str  # a short name for the centre of the mind map
+    mindmap: list[Branch]
+    findings: list[str]
+    evidence: list[EvidenceRow]
+    caveats: list[str]
+    charts: list[Chart] = []
+    figures: list[CardFigure] = []
 
 
 class QuizQuestion(BaseModel):
@@ -197,3 +270,14 @@ class Proof(BaseModel):
     paragraph: str  # the original paragraph holding the quote
     quote: str | None  # the key words, verbatim from `paragraph` (None if they couldn't be pinned down)
     note: Note  # the summarised version
+
+
+class Fact(BaseModel):
+    kind: Literal["background", "struggle", "strength", "interest", "preference"]
+    text: str  # short and concrete, e.g. "Shaky on what a protein backbone is"
+
+
+class LearnerProfile(BaseModel):
+    """What the app has learned about the reader (app/memory.py); they can see and edit it on the My learning page."""
+
+    facts: list[Fact] = []

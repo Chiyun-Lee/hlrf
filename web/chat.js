@@ -82,7 +82,7 @@ function openChat({ paperId, page, note, selection }) {
     say("user", esc(text));
     const pending = say("ai", "thinking…");
     try {
-      const res = await api(`/papers/${paperId}/pages/${page}/ask`, {
+      const res = await api(atLevel(`/papers/${paperId}/pages/${page}/ask`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ note: note?.index ?? null, selection, messages }),
@@ -105,7 +105,7 @@ function noteUpdated(paperId, page, note, updated, say) {
   setNote(note, true);
   const line = say("system", `✎ Added this to the note. <button>Undo</button>`);
   line.querySelector("button").onclick = async () => {
-    await api(`/papers/${paperId}/pages/${page}/notes/${note.index}`, {
+    await api(atLevel(`/papers/${paperId}/pages/${page}/notes/${note.index}`), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(before),

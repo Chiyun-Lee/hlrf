@@ -9,8 +9,8 @@ from collections import Counter
 
 import pymupdf
 
-from . import llm
-from .schemas import GraphicalAbstract, PageSummary, Paper
+from . import levels, llm
+from .schemas import GraphicalAbstract, Mark, PageSummary, Paper
 from .summarize import FIGURE, parse_note_id
 
 MODEL = os.environ.get("ABSTRACT_MODEL", "claude-opus-5-5")
@@ -24,8 +24,8 @@ MIN_INK = 0.03  # ...and isn't blank
 log = logging.getLogger(__name__)
 
 SYSTEM = """You turn a research paper's reading notes into a graphical abstract: one slide that jogs the memory of
-someone who has just read the paper. Keep the voice of the notes (plain, warm, a little playful, in the style of
-Claire Lamman's doodle summaries) and keep real numbers and names.
+someone who has just read the paper. Keep the voice of the notes (warm, a little playful, in the style of Claire
+Lamman's doodle summaries, pitched at the reader described at the end) and keep real numbers and names.
 
 - title: a short playful title for the whole paper (at most 8 words).
 - takeaway: the one thing to remember, in one sentence (under ~20 words).
@@ -38,7 +38,7 @@ Claire Lamman's doodle summaries) and keep real numbers and names.
   none."""
 
 
-def make(paper: Paper, summaries: list[PageSummary], pdf: bytes | None) -> GraphicalAbstract:
+def make(paper: Paper, summaries: list[PageSummary], pdf: bytes | None, level: str) -> GraphicalAbstract:
     notes = []
     for p, summary in enumerate(summaries):
         for k, n in enumerate(summary.notes):
@@ -47,7 +47,7 @@ def make(paper: Paper, summaries: list[PageSummary], pdf: bytes | None) -> Graph
             label = f"[figure p{p}n{k}]" if n.kind == "figure" else "[section]"
             notes.append(f"{label} {n.heading or ''}\n" + "\n".join(f"- {b}" for b in n.bullets))
     prompt = f"Paper: {paper.title}\n\nNotes, in reading order:\n\n" + "\n\n".join(notes)
-    abstract = llm.ask(GraphicalAbstract, SYSTEM, prompt, MODEL, EFFORT)
+    abstract = llm.ask(GraphicalAbstract, f"{SYSTEM}\n\n{levels.for_prompt(level)}", prompt, MODEL, EFFORT)
 
     abstract.flow, abstract.bullets = abstract.flow[:6], abstract.bullets[:5]
     if not abstract.flow:
@@ -69,7 +69,8 @@ def make(paper: Paper, summaries: list[PageSummary], pdf: bytes | None) -> Graph
             log.exception("figure %s skipped", f.figure)
             continue
         if crop:
-            f.image, f.width, f.height = crop
+            f.image, f.width, f.height, clip = crop
+            f.marks = marks_in_crop(note.marks, clip, paper.pages[p])
             figures.append(f)
         else:
             log.info("figure %s skipped: crop didn't look like a figure", f.figure)
@@ -99,9 +100,28 @@ def running_bands(paper: Paper) -> list[tuple[float, float]]:
     return bands
 
 
-def crop_figure(pdf: bytes, paper: Paper, p: int, caption: int, band: tuple[float, float]) -> tuple[str, float, float] | None:
-    """The figure belonging to caption block `caption` on page `p` as (PNG data URI, width, height), or None if
-    nothing on the page looks like it.
+def marks_in_crop(marks: list[Mark], clip: pymupdf.Rect, page) -> list[Mark]:
+    """A figure's doodles moved from page coordinates (0-1000 of the page) to crop coordinates (0-1000 of the crop),
+    keeping those whose feature lies in the crop and pulling their text inside it."""
+    def to_crop(x, y):
+        px, py = x * page.width / 1000, y * page.height / 1000
+        return (px - clip.x0) / clip.width * 1000, (py - clip.y0) / clip.height * 1000
+
+    out = []
+    for m in marks:
+        x0, y0 = to_crop(*m.box[:2])
+        x1, y1 = to_crop(*m.box[2:])
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        if not (0 <= cx <= 1000 and 0 <= cy <= 1000):
+            continue
+        tx, ty = to_crop(*m.text_at)
+        out.append(m.model_copy(update={"box": [x0, y0, x1, y1], "text_at": [min(max(tx, 60), 940), min(max(ty, 30), 970)]}))
+    return out
+
+
+def crop_figure(pdf: bytes, paper: Paper, p: int, caption: int, band: tuple[float, float]):
+    """The figure belonging to caption block `caption` on page `p` as (PNG data URI, width, height, clip rect), or
+    None if nothing on the page looks like it.
 
     The figure is the pictures and vector drawings near the caption, inside the page's header/footer `band` and
     between the neighbouring captions: above the caption if there are any (the usual layout), else below it (tables),
@@ -139,7 +159,7 @@ def crop_figure(pdf: bytes, paper: Paper, p: int, caption: int, band: tuple[floa
         if clip.width * clip.height < MIN_FIGURE * W * H or ink(pg.get_pixmap(clip=clip, dpi=30)) < MIN_INK:
             return None
         png = pg.get_pixmap(clip=clip, dpi=CROP_DPI).tobytes("png")
-    return f"data:image/png;base64,{base64.b64encode(png).decode()}", clip.width, clip.height
+    return f"data:image/png;base64,{base64.b64encode(png).decode()}", clip.width, clip.height, clip
 
 
 def ink(pix) -> float:

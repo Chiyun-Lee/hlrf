@@ -17,8 +17,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import abstract as graphical
-from . import db, extract, feed, llm, pins, pitch, proof, quiz, review, summarize, tutor
-from .schemas import GraphicalAbstract, Note, PageSummary, Paper, PaperPins, Pitch, Proof, Quiz
+from . import cards, db, extract, feed, llm, memory, pins, pitch, proof, quiz, review, revision, summarize, tutor
+from .levels import DEFAULT, Level
+from .schemas import GraphicalAbstract, LearnerProfile, Note, PageSummary, Paper, PaperPins, Pitch, Proof, SummaryCards
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
@@ -27,9 +28,10 @@ app.add_middleware(CORSMiddleware, allow_origin_regex=r"chrome-extension://.*", 
 
 
 class SaveRequest(BaseModel):
-    """Sent by the extension. html/pdf are captured in the user's browser; without them the backend downloads the URL."""
+    """Sent by the extension, or by the library's "Add a paper" box. html/pdf are captured in the user's browser (or a
+    PDF uploaded from disk); without them the backend downloads the URL. An upload may come without a URL."""
 
-    url: str
+    url: str = ""
     meta: dict = {}
     html: str | None = None
     pdf: str | None = None  # base64
@@ -37,8 +39,13 @@ class SaveRequest(BaseModel):
 
 @app.post("/papers")
 def save_paper(req: SaveRequest) -> dict:
+    pdf = base64.b64decode(req.pdf) if req.pdf else None
+    if pdf is not None and not extract.is_pdf(pdf):
+        raise HTTPException(400, "That file isn't a PDF.")
+    if not pdf and not req.url.strip():
+        raise HTTPException(400, "Paste a link or choose a PDF.")
     try:
-        paper, pdf = extract.extract(req.url, req.meta, req.html, base64.b64decode(req.pdf) if req.pdf else None)
+        paper, pdf = extract.extract(req.url.strip(), req.meta, req.html, pdf)
     except Exception as e:
         # Surface the cause in the extension popup rather than a bare 500.
         logging.exception("extraction failed for %s", req.url)
@@ -64,7 +71,11 @@ def get_paper(paper_id: int) -> dict:
     return {
         **paper.model_dump(),
         "has_pdf": db.has_pdf(paper_id),
-        "has_abstract": db.get_abstract(paper_id) is not None,
+        "abstract_levels": db.abstract_levels(paper_id),
+        "card_levels": db.card_levels(paper_id),
+        # The paper's arXiv id, normalised as For you stores it, so the reader can add it to "Your papers".
+        "feed_id": (feed_id := feed.arxiv_id(paper.url, paper.arxiv_id)),
+        "in_your_papers": feed.is_mine(feed_id),
         "reviewed": pins.has_pins(paper_id, paper.url, paper.arxiv_id),  # has pins from an agent review (review.js)
     }
 
@@ -89,26 +100,28 @@ def get_pdf(paper_id: int, request: Request) -> Response:
     return Response(pdf, media_type="application/pdf", headers=headers)
 
 
-summary_locks = defaultdict(threading.Lock)  # one generation per page, even if the viewer asks twice
+# Notes, abstracts and quizzes are written for one reading level (app/levels.py), passed as ?level=.
+
+summary_locks = defaultdict(threading.Lock)  # one generation per page and level, even if the viewer asks twice
 
 
-def page_summary(paper_id: int, paper: Paper, page: int) -> PageSummary:
+def page_summary(paper_id: int, paper: Paper, page: int, level: Level) -> PageSummary:
     """Notes for one page (0-indexed), generated on first request and cached."""
-    with summary_locks[paper_id, page]:
-        if summary := db.get_summary(paper_id, page):
+    with summary_locks[paper_id, page, level]:
+        if summary := db.get_summary(paper_id, page, level):
             return summary
-        summary = summarize.summarize_page(paper, page, db.get_pdf(paper_id))
-        db.save_summary(paper_id, page, summary)
+        summary = summarize.summarize_page(paper, page, level, db.get_pdf(paper_id))
+        db.save_summary(paper_id, page, level, summary)
         return summary
 
 
-def all_summaries(paper_id: int, paper: Paper) -> list[PageSummary]:
+def all_summaries(paper_id: int, paper: Paper, level: Level) -> list[PageSummary]:
     """Notes for every page. A page whose notes can't be written is left empty (and retried next time) rather than
     sinking whatever needs the whole paper."""
 
     def one(i: int) -> PageSummary:
         try:
-            return page_summary(paper_id, paper, i)
+            return page_summary(paper_id, paper, i, level)
         except Exception:
             logging.exception("notes for paper %s page %s failed; leaving it out", paper_id, i)
             return PageSummary(notes=[])
@@ -136,12 +149,12 @@ def claude_errors(what: str):
 
 
 @app.get("/papers/{paper_id}/pages/{page}/summary")
-def get_summary(paper_id: int, page: int) -> PageSummary:
+def get_summary(paper_id: int, page: int, level: Level = DEFAULT) -> PageSummary:
     paper = get_paper_or_404(paper_id)
     if not 0 <= page < len(paper.pages):
         raise HTTPException(404)
     with claude_errors(f"summary of paper {paper_id} page {page}"):
-        return page_summary(paper_id, paper, page)
+        return page_summary(paper_id, paper, page, level)
 
 
 @app.get("/papers/{paper_id}/pins")
@@ -194,30 +207,135 @@ def list_reviews() -> dict[str, dict]:
 
 
 @app.get("/papers/{paper_id}/abstract")
-def get_abstract(paper_id: int) -> GraphicalAbstract:
-    if not (abstract := db.get_abstract(paper_id)):
+def get_abstract(paper_id: int, level: Level = DEFAULT) -> GraphicalAbstract:
+    if not (abstract := db.get_abstract(paper_id, level)):
         raise HTTPException(404)
     return abstract
 
 
 @app.post("/papers/{paper_id}/abstract")
-def make_abstract(paper_id: int) -> GraphicalAbstract:
+def make_abstract(paper_id: int, level: Level = DEFAULT) -> GraphicalAbstract:
     """(Re)make the graphical abstract from the notes, writing notes for any pages not read yet."""
     paper = get_paper_or_404(paper_id)
     with claude_errors(f"abstract of paper {paper_id}"):
-        abstract = graphical.make(paper, all_summaries(paper_id, paper), db.get_pdf(paper_id))
-    db.save_abstract(paper_id, abstract)
+        abstract = graphical.make(paper, all_summaries(paper_id, paper, level), db.get_pdf(paper_id), level)
+    db.save_abstract(paper_id, level, abstract)
     return abstract
 
 
-@app.post("/papers/{paper_id}/quiz")
-def make_quiz(paper_id: int) -> Quiz:
-    """A fresh quiz each time, from the notes and the graphical abstract."""
+@app.get("/papers/{paper_id}/cards")
+def get_cards(paper_id: int, level: Level = DEFAULT) -> SummaryCards:
+    if not (deck := db.get_cards(paper_id, level)):
+        raise HTTPException(404)
+    return deck
+
+
+@app.post("/papers/{paper_id}/cards")
+def make_cards(paper_id: int, level: Level = DEFAULT) -> SummaryCards:
+    """(Re)make the summary cards from the notes and the paper's text, writing notes for any pages not read yet."""
     paper = get_paper_or_404(paper_id)
-    if not (abstract := db.get_abstract(paper_id)):
+    with claude_errors(f"cards for paper {paper_id}"):
+        deck = cards.make(paper, all_summaries(paper_id, paper, level), db.get_pdf(paper_id), level)
+    db.save_cards(paper_id, level, deck)
+    return deck
+
+
+@app.post("/papers/{paper_id}/quiz")
+def make_quiz(paper_id: int, level: Level = DEFAULT) -> dict:
+    """A fresh quiz each time, from the notes and the graphical abstract. Its questions also go into the revision bank
+    (app/revision.py); each comes back with its bank `id`, so answers count towards revision."""
+    paper = get_paper_or_404(paper_id)
+    if not (abstract := db.get_abstract(paper_id, level)):
         raise HTTPException(409, "Make the graphical abstract first.")
     with claude_errors(f"quiz for paper {paper_id}"):
-        return quiz.make(paper, all_summaries(paper_id, paper), abstract)
+        made = quiz.make(paper, all_summaries(paper_id, paper, level), abstract, level)
+    ids = db.add_questions(paper_id, level, made.questions, revision.today().isoformat())
+    return {
+        "questions": [
+            {**q.model_dump(), "id": i, "paper_id": paper_id, "paper": paper.title, "level": level}
+            for q, i in zip(made.questions, ids)
+        ]
+    }
+
+
+class QuizResult(BaseModel):
+    right_first_time: int
+    total: int
+    missed: list[dict] = []  # [{"prompt": ..., "answer": ...}]
+
+
+@app.post("/papers/{paper_id}/quiz/result", status_code=204)
+def quiz_result(paper_id: int, result: QuizResult) -> None:
+    """Remember how a quiz went; what was missed feeds the learner profile."""
+    paper = get_paper_or_404(paper_id)
+    missed = "\n".join(f"- {m.get('prompt')} (answer: {m.get('answer')})" for m in result.missed) or "(none)"
+    memory.record(
+        paper_id,
+        "quiz",
+        result.model_dump(),
+        f'Quiz on "{paper.title}": {result.right_first_time}/{result.total} right first time. Missed:\n{missed}',
+    )
+
+
+@app.get("/revision")
+def get_revision() -> dict:
+    """The Revision page: XP today, streak, the week, and each paper's questions, due count and strength."""
+    return revision.overview()
+
+
+class SessionRequest(BaseModel):
+    paper_ids: list[int] | None = None  # None: every paper
+    n: int = revision.SESSION
+
+
+@app.post("/revision/session")
+def revision_session(req: SessionRequest) -> dict:
+    """A review: due questions first, mixed across papers."""
+    return {"questions": revision.session(req.paper_ids, max(1, min(req.n, 30)))}
+
+
+class AnswerRequest(BaseModel):
+    correct: bool
+    first_try: bool = True
+
+
+@app.post("/revision/questions/{question_id}/answer")
+def revision_answer(question_id: int, req: AnswerRequest) -> dict:
+    """Record an answer (from a review or a paper's quiz): moves the question between boxes and awards XP."""
+    try:
+        return revision.answer(question_id, req.correct, req.first_try)
+    except KeyError:
+        raise HTTPException(404, "No such question")
+
+
+@app.post("/revision/result", status_code=204)
+def revision_result(result: QuizResult) -> None:
+    """Remember how a review across papers went; `missed` items also carry their "paper"."""
+    missed = "\n".join(f"- [{m.get('paper')}] {m.get('prompt')} (answer: {m.get('answer')})" for m in result.missed) or "(none)"
+    memory.record(
+        None,
+        "revision",
+        result.model_dump(),
+        f"Revision across papers: {result.right_first_time}/{result.total} right first time. Missed:\n{missed}",
+    )
+
+
+@app.get("/me")
+def get_me() -> dict:
+    """The My learning page: the learner profile and recent questions and quizzes."""
+    return {"profile": db.get_profile(), "events": db.events()}
+
+
+@app.put("/me/profile")
+def put_profile(profile: LearnerProfile) -> LearnerProfile:
+    """The reader's own edits to what the app has learned about them."""
+    db.save_profile(profile)
+    return profile
+
+
+@app.delete("/me", status_code=204)
+def forget_me() -> None:
+    db.forget_everything()
 
 
 class ProofRequest(BaseModel):
@@ -228,12 +346,12 @@ class ProofRequest(BaseModel):
 
 
 @app.post("/papers/{paper_id}/proof")
-def show_proof(paper_id: int, req: ProofRequest) -> Proof:
+def show_proof(paper_id: int, req: ProofRequest, level: Level = DEFAULT) -> Proof:
     """The original paragraph behind a quiz answer, with the key words picked out, plus its note."""
     paper = get_paper_or_404(paper_id)
     try:
         p, k = summarize.parse_note_id(req.proof)
-        note = db.get_summary(paper_id, p).notes[k]
+        note = db.get_summary(paper_id, p, level).notes[k]
     except (ValueError, IndexError, AttributeError):
         raise HTTPException(404, "No such note")
     with claude_errors(f"proof for paper {paper_id}"):
@@ -247,31 +365,38 @@ class AskRequest(BaseModel):
 
 
 @app.post("/papers/{paper_id}/pages/{page}/ask")
-def ask(paper_id: int, page: int, req: AskRequest) -> dict:
+def ask(paper_id: int, page: int, req: AskRequest, level: Level = DEFAULT) -> dict:
     """Answer a question about a highlighted passage. Returns the reply, and the note if the tutor updated it."""
-    paper, summary = db.get(paper_id), db.get_summary(paper_id, page)
+    paper, summary = db.get(paper_id), db.get_summary(paper_id, page, level)
     if not paper or not 0 <= page < len(paper.pages):
         raise HTTPException(404)
     note = summary.notes[req.note] if summary and req.note is not None and 0 <= req.note < len(summary.notes) else None
     with claude_errors(f"tutor for paper {paper_id} page {page}"):
-        reply = tutor.answer(paper, page, note, req.selection, req.messages)
+        reply = tutor.answer(paper, page, note, req.selection, req.messages, level)
+    chat = "\n".join(f"{'Reader' if m['role'] == 'user' else 'Tutor'}: {m['content']}" for m in req.messages)
+    memory.record(
+        paper_id,
+        "question",
+        {"page": page, "level": level, "selection": req.selection, "question": req.messages[-1]["content"], "answer": reply.reply},
+        f'Reading "{paper.title}", they highlighted "{req.selection}" and chatted with the tutor:\n{chat}\nTutor: {reply.reply}',
+    )
     updated = None
     if note and reply.update_note and (reply.bullets or reply.heading):
         note.bullets = reply.bullets or note.bullets
         note.heading = reply.heading or note.heading
-        db.save_summary(paper_id, page, summary)
+        db.save_summary(paper_id, page, level, summary)
         updated = note
     return {"reply": reply.reply, "updated_note": updated}
 
 
 @app.put("/papers/{paper_id}/pages/{page}/notes/{index}")
-def put_note(paper_id: int, page: int, index: int, note: Note) -> Note:
-    """Replace one note (the reader uses this to undo a tutor's edit)."""
-    summary = db.get_summary(paper_id, page)
+def put_note(paper_id: int, page: int, index: int, note: Note, level: Level = DEFAULT) -> Note:
+    """Replace one note (the reader's own edits, and undoing a tutor's edit)."""
+    summary = db.get_summary(paper_id, page, level)
     if not summary or not 0 <= index < len(summary.notes):
         raise HTTPException(404)
     summary.notes[index] = note
-    db.save_summary(paper_id, page, summary)
+    db.save_summary(paper_id, page, level, summary)
     return note
 
 

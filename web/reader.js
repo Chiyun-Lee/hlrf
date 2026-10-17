@@ -69,7 +69,9 @@ async function renderReader(container, paperId, p) {
     { rootMargin: DRAW_AHEAD },
   );
   const near = new IntersectionObserver(
-    (entries) => (entries.forEach((e) => (e.isIntersecting && !e.target.asked ? waiting.add(e.target) : waiting.delete(e.target))), askForNotes()),
+    (entries) => (
+      entries.forEach((e) => ((e.target.near = e.isIntersecting) && !e.target.asked ? waiting.add(e.target) : waiting.delete(e.target))), askForNotes()
+    ),
     { rootMargin: NOTES_AHEAD },
   );
   pages.forEach((el) => (seen.observe(el), near.observe(el)));
@@ -90,6 +92,18 @@ async function renderReader(container, paperId, p) {
   }).observe(container);
 }
 
+// After the reading level changes: pages whose notes were asked for lose them and queue again (askForNotes), those
+// near the screen at once, the rest when they next scroll near.
+function reloadNotes(container) {
+  container.querySelectorAll(".page").forEach((el) => {
+    if (!el.asked) return;
+    el.asked = false;
+    el.querySelectorAll(".note, .marks").forEach((n) => n.remove());
+    if (el.near) waiting.add(el);
+  });
+  askForNotes();
+}
+
 function pageView(paperId, page, i, pdf) {
   const el = document.createElement("section");
   const onPdf = pdf && page.width;
@@ -107,14 +121,19 @@ function pageView(paperId, page, i, pdf) {
   el.insertAdjacentHTML("beforeend", `<div class="page-status"></div>`);
 
   el.draw = () => onPdf && drawPdfPage(el, pdf, i);
+  // Notes at the current reading level (app.js), replacing any there.
   el.loadNotes = async () => {
+    const want = level;
     const status = el.querySelector(".page-status");
+    el.querySelectorAll(".note, .marks").forEach((n) => n.remove());
     status.textContent = "writing notes…";
     try {
-      const summary = await api(`/papers/${paperId}/pages/${i}/summary`);
+      const summary = await api(atLevel(`/papers/${paperId}/pages/${i}/summary`));
+      if (want !== level) return; // the reader switched level while these were being written
       summary.notes.forEach((n, k) => addNote(el, page, n, k, onPdf));
       status.textContent = "";
     } catch (e) {
+      if (want !== level) return;
       status.innerHTML = `notes failed <button>retry</button>`;
       status.querySelector("button").onclick = () => el.loadNotes();
     }
@@ -183,8 +202,20 @@ function addNote(el, page, n, index, onPdf) {
     note.parts.push(part);
   }
   onPdf ? (place(note, main, page), el.append(note)) : main.append(note);
+  if (onPdf && n.marks?.length) note.parts.push(figureMarks(el, page, n.marks));
   if (el.closest(".originals")) setNote(note, false); // the reader shows originals: notes written since stay off
   fit(note);
+}
+
+// A figure note's doodles (marks.js), drawn over the page in an SVG that switches with the note.
+function figureMarks(el, page, marks) {
+  const ratio = page.height / page.width;
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "marks");
+  svg.setAttribute("viewBox", `0 0 1000 ${1000 * ratio}`);
+  drawMarks(svg, marks, (x, y) => [x, y * ratio], 19);
+  el.append(svg);
+  return svg;
 }
 
 // (Re)write a note's text, e.g. after the tutor in chat.js adds to it.
@@ -217,7 +248,7 @@ async function editNote(note) {
   stopEditing(note);
   const page = note.closest(".page");
   try {
-    fillNote(note, await api(`/papers/${page.paperId}/pages/${page.dataset.page}/notes/${note.index}`, {
+    fillNote(note, await api(atLevel(`/papers/${page.paperId}/pages/${page.dataset.page}/notes/${note.index}`), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updated),

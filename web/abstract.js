@@ -11,12 +11,15 @@ const FLOW = {
 };
 const FONT_URL = "https://cdn.jsdelivr.net/gh/ipython/xkcd-font@master/xkcd-script/font/xkcd-script.woff";
 
-// Opens the abstract in an overlay. `make`: (re)generate it instead of loading the saved one.
-async function showAbstract(paperId, paperTitle, { make = false, onReady } = {}) {
+// Opens the abstract in an overlay, with the summary cards (cards.js) below it. `make`: (re)generate the abstract
+// instead of loading the saved one. `hasCards`: false makes the cards too, alongside the abstract.
+async function showAbstract(paperId, paperTitle, { make = false, hasCards = true, onReady } = {}) {
+  const deck = api(atLevel(`/papers/${paperId}/cards`), hasCards ? undefined : { method: "POST" });
+  deck.catch(() => {}); // shown in the cards section
   const overlay = openOverlay(`<p class="overlay-status">${make ? "Reading every page and drawing your graphical abstract… (about a minute)" : "Loading…"}</p>`);
   let a;
   try {
-    a = make ? await api(`/papers/${paperId}/abstract`, { method: "POST" }) : await api(`/papers/${paperId}/abstract`);
+    a = await api(atLevel(`/papers/${paperId}/abstract`), make ? { method: "POST" } : undefined);
     await document.fonts.load('20px "xkcd"');
   } catch (e) {
     overlay.querySelector(".overlay-status").textContent = `Couldn't make the abstract: ${e.message}`;
@@ -30,7 +33,9 @@ async function showAbstract(paperId, paperTitle, { make = false, onReady } = {})
       <button data-act="quiz">Quiz me ✦</button>
       <button data-act="close" class="close" title="Close">×</button>
     </div>
-    <div class="abstract-slide">${abstractSvg(a, paperTitle)}</div>`;
+    <div class="abstract-slide">${abstractSvg(a, paperTitle)}</div>
+    <div class="cards-slot"></div>`;
+  showCards(overlay.querySelector(".cards-slot"), paperId, deck);
   overlay.querySelector(".overlay-tools").onclick = async (e) => {
     const act = e.target.dataset.act;
     if (act === "export") exportSvg(abstractSvg(a, paperTitle, await embeddedFont()), paperTitle);
@@ -82,7 +87,17 @@ function abstractSvg(a, paperTitle, fontCss = "") {
     const label = wrap(f.label, slotW - 24, 20).slice(0, 3);
     const imgH = slotH - 14 - label.length * 26;
     out.push(`<rect x="${left}" y="${top}" width="${slotW}" height="${slotH}" rx="12" fill="#fff" stroke="${INK}" stroke-width="1.5" stroke-dasharray="6 5"/>`);
-    out.push(`<image href="${f.image}" x="${left + 8}" y="${top + 8}" width="${slotW - 16}" height="${imgH - 8}" preserveAspectRatio="xMidYMid meet"/>`);
+    const [bx, by, bw, bh] = [left + 8, top + 8, slotW - 16, imgH - 8];
+    out.push(`<image href="${f.image}" x="${bx}" y="${by}" width="${bw}" height="${bh}" preserveAspectRatio="xMidYMid meet"/>`);
+    if (f.marks?.length) {
+      // Doodles sit on the image as drawn (scaled to fit, centred).
+      const s = Math.min(bw / f.width, bh / f.height);
+      const [dw, dh] = [f.width * s, f.height * s];
+      const [ox, oy] = [bx + (bw - dw) / 2, by + (bh - dh) / 2];
+      const g = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      drawMarks(g, f.marks, (x, y) => [ox + (x / 1000) * dw, oy + (y / 1000) * dh], 17);
+      out.push(g.innerHTML);
+    }
     out.push(svgText(left + 12, top + imgH + 22, label, 20, slotW - 24));
   });
   const bx = figs.length ? pad + figW + 50 : pad;
@@ -100,7 +115,8 @@ function abstractSvg(a, paperTitle, fontCss = "") {
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">
   <defs>
-    <style>${fontCss} text { font-family: xkcd, "Comic Sans MS", cursive; fill: ${INK}; }</style>
+    <style>${fontCss} text { font-family: xkcd, "Comic Sans MS", cursive; fill: ${INK}; }
+      .mark-text { stroke: #fff; paint-order: stroke; stroke-linejoin: round; }</style>
     <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="${INK}"/></marker>
   </defs>
   <rect width="${w}" height="${h}" fill="#fff"/>
