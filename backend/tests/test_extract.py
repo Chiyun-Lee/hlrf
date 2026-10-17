@@ -51,3 +51,84 @@ def test_attention_is_all_you_need():
     assert paper.authors[6].family == "Kaiser"  # Łukasz Kaiser
     assert any("Scaled Dot-Product Attention" in b.text for p in paper.pages for b in p.blocks)
     assert all(b.bbox for b in paper.pages[0].blocks)
+
+
+def test_claude_code_backend(monkeypatch, tmp_path):
+    """LLM_BACKEND=claude-code: the same call through the Agent SDK, with Claude Code's own context switched off."""
+    claude_agent_sdk = pytest.importorskip("claude_agent_sdk")
+    import asyncio
+
+    from app import llm
+    from app.schemas import PaperHeader
+
+    seen = {}
+
+    async def fake_query(prompt, options):
+        seen["prompt"], seen["options"] = prompt, options
+        yield claude_agent_sdk.ResultMessage(
+            subtype="success", duration_ms=1, duration_api_ms=1, is_error=False, num_turns=1, session_id="s",
+            structured_output={"title": "T", "authors": [{"raw": "Ada Lovelace"}]},
+        )
+
+    monkeypatch.setattr(claude_agent_sdk, "query", fake_query)
+    monkeypatch.setattr(llm, "CLAUDE_CODE_CWD", tmp_path / "cwd")
+    header = asyncio.run(llm.ask_claude_code(PaperHeader, "system", "the paper", "claude-opus-5-5", "low"))
+    assert header.title == "T" and header.authors[0].raw == "Ada Lovelace"
+    o = seen["options"]
+    assert (o.system_prompt, o.model, o.effort, o.tools, o.setting_sources) == ("system", "claude-opus-5-5", "low", [], [])
+    assert o.output_format["type"] == "json_schema" and "title" in o.output_format["schema"]["properties"]
+
+    async def failing_query(prompt, options):
+        yield claude_agent_sdk.ResultMessage(
+            subtype="success", duration_ms=1, duration_api_ms=1, is_error=True, num_turns=1, session_id="s",
+            errors=["Not logged in"],
+        )
+        raise RuntimeError("process exited")
+
+    monkeypatch.setattr(claude_agent_sdk, "query", failing_query)
+    with pytest.raises(RuntimeError, match="Not logged in"):
+        asyncio.run(llm.ask_claude_code(PaperHeader, "system", "the paper", "claude-opus-5-5", "low"))
+
+    monkeypatch.setattr(llm, "BACKEND", "claude-code")
+    assert llm.ready() is None
+    monkeypatch.setattr(llm, "BACKEND", "carrier-pigeon")
+    assert "Unknown LLM_BACKEND" in llm.ready()
+
+
+def test_claude_code_backend_takes_conversations_and_images(monkeypatch, tmp_path):
+    """The tutor's chat and pages with figures go through Claude Code too: a conversation becomes one turn with the
+    earlier messages as a transcript, and image blocks are sent through the SDK's streaming input."""
+    claude_agent_sdk = pytest.importorskip("claude_agent_sdk")
+    import asyncio
+
+    from app import llm
+    from app.schemas import PaperHeader
+
+    sent = []
+
+    async def fake_query(prompt, options):
+        if isinstance(prompt, str):
+            sent.append(prompt)
+        else:
+            sent.extend([message async for message in prompt])
+        yield claude_agent_sdk.ResultMessage(
+            subtype="success", duration_ms=1, duration_api_ms=1, is_error=False, num_turns=1, session_id="s",
+            structured_output={"title": "T", "authors": []},
+        )
+
+    monkeypatch.setattr(claude_agent_sdk, "query", fake_query)
+    monkeypatch.setattr(llm, "CLAUDE_CODE_CWD", tmp_path / "cwd")
+
+    chat = [
+        {"role": "user", "content": "What is a bispectrum?"},
+        {"role": "assistant", "content": "The three-point function in Fourier space."},
+        {"role": "user", "content": "Why measure it?"},
+    ]
+    asyncio.run(llm.ask_claude_code(PaperHeader, "system", chat, "claude-opus-5-5", "low"))
+    assert sent[0].startswith("The conversation so far:")
+    assert "Reader: What is a bispectrum?" in sent[0] and "You: The three-point function" in sent[0]
+    assert sent[0].endswith("Why measure it?")
+
+    image = {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBORw0K"}}
+    asyncio.run(llm.ask_claude_code(PaperHeader, "system", [image, {"type": "text", "text": "Page 3"}], "claude-opus-5-5", "low"))
+    assert sent[1] == {"type": "user", "message": {"role": "user", "content": [image, {"type": "text", "text": "Page 3"}]}}

@@ -1,13 +1,15 @@
-"""SQLite storage: one row per paper (the record as JSON, plus the PDF when we have it) and cached page summaries."""
+"""SQLite storage: one row per paper (the record as JSON, plus the PDF when we have it) and cached page summaries.
+For you adds arXiv papers, your signals on them (up, down, click, mine) and cached pitches."""
 
 import os
 import sqlite3
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 
 from pydantic import ValidationError
 
-from .schemas import GraphicalAbstract, PageSummary, Paper, SummaryCards
+from .schemas import ArxivPaper, GraphicalAbstract, PageSummary, Paper, Pitch, SummaryCards
 
 DB_PATH = os.environ.get("PAPERS_DB", Path(__file__).parent.parent / "papers.db")  # override for tests/demos
 
@@ -18,6 +20,11 @@ if "pdf" not in [col[1] for col in conn.execute("PRAGMA table_info(papers)")]:  
     conn.execute("ALTER TABLE papers ADD COLUMN pdf BLOB")
 conn.execute("CREATE TABLE IF NOT EXISTS summaries (paper_id INTEGER, page INTEGER, data TEXT, PRIMARY KEY (paper_id, page))")
 conn.execute("CREATE TABLE IF NOT EXISTS abstracts (paper_id INTEGER PRIMARY KEY, data TEXT)")
+conn.execute("CREATE TABLE IF NOT EXISTS pitches (arxiv_id TEXT PRIMARY KEY, data TEXT)")
+# listed: came from a daily listing (rather than fetched by id, like your own older papers), so it's in a day's feed
+conn.execute("CREATE TABLE IF NOT EXISTS arxiv_papers (id TEXT PRIMARY KEY, listed INTEGER, data TEXT)")
+conn.execute("CREATE TABLE IF NOT EXISTS feed_signals (arxiv_id TEXT, kind TEXT, at TEXT, PRIMARY KEY (arxiv_id, kind))")
+conn.execute("CREATE TABLE IF NOT EXISTS feed_meta (key TEXT PRIMARY KEY, value TEXT)")
 conn.execute("CREATE TABLE IF NOT EXISTS cards (paper_id INTEGER PRIMARY KEY, data TEXT)")
 
 
@@ -53,6 +60,12 @@ def list_all() -> list[tuple[int, Paper]]:
     return [(pid, Paper.model_validate_json(data)) for pid, data in rows]
 
 
+def sources() -> list[tuple[int, str, str | None]]:
+    """(id, url, arxiv_id) per saved paper, without loading the full records."""
+    with lock:
+        return conn.execute("SELECT id, url, json_extract(data, '$.arxiv_id') FROM papers ORDER BY id").fetchall()
+
+
 def delete(paper_id: int) -> bool:
     with lock, conn:
         cur = conn.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
@@ -85,6 +98,83 @@ def get_abstract(paper_id: int) -> GraphicalAbstract | None:
 def save_abstract(paper_id: int, abstract: GraphicalAbstract) -> None:
     with lock, conn:
         conn.execute("INSERT OR REPLACE INTO abstracts VALUES (?, ?)", (paper_id, abstract.model_dump_json()))
+
+
+def get_pitches(arxiv_ids: list[str]) -> dict[str, Pitch]:
+    with lock:
+        rows = conn.execute(
+            f"SELECT data FROM pitches WHERE arxiv_id IN ({','.join('?' * len(arxiv_ids))})", arxiv_ids
+        ).fetchall()
+    pitches = []
+    for (data,) in rows:
+        try:
+            pitches.append(Pitch.model_validate_json(data))
+        except ValidationError:  # cached in an older format; regenerate
+            pass
+    return {p.id: p for p in pitches}
+
+
+def save_pitch(pitch: Pitch) -> None:
+    with lock, conn:
+        conn.execute("INSERT OR REPLACE INTO pitches VALUES (?, ?)", (pitch.id, pitch.model_dump_json()))
+
+
+def save_arxiv(papers: list[ArxivPaper], listed: bool) -> None:
+    """Store papers, or update them to their newest version; a paper once listed stays listed."""
+    rows = [(p.id, int(listed), p.model_dump_json()) for p in papers]
+    with lock, conn:
+        conn.executemany(
+            "INSERT INTO arxiv_papers VALUES (?, ?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET data = excluded.data, listed = max(listed, excluded.listed)",
+            rows,
+        )
+
+
+def arxiv_count() -> int:
+    with lock:
+        return conn.execute("SELECT count(*) FROM arxiv_papers").fetchone()[0]
+
+
+def all_arxiv() -> list[tuple[ArxivPaper, bool]]:
+    """Every stored arXiv paper, with whether it came from a daily listing."""
+    with lock:
+        rows = conn.execute("SELECT data, listed FROM arxiv_papers").fetchall()
+    return [(ArxivPaper.model_validate_json(data), bool(listed)) for data, listed in rows]
+
+
+def signals() -> list[tuple[str, str]]:
+    """(arxiv_id, kind) for every signal, newest first. kind: up, down, click, mine (your own paper) or zotero."""
+    with lock:
+        return conn.execute("SELECT arxiv_id, kind FROM feed_signals ORDER BY at DESC").fetchall()
+
+
+def set_signal(arxiv_id: str, kind: str) -> None:
+    with lock, conn:
+        conn.execute("INSERT OR IGNORE INTO feed_signals VALUES (?, ?, ?)", (arxiv_id, kind, datetime.now(timezone.utc).isoformat()))
+
+
+def replace_signals(kind: str, arxiv_ids: list[str]) -> None:
+    """Make `arxiv_ids` the whole set of signals of this kind (e.g. what a linked Zotero export contains)."""
+    now = datetime.now(timezone.utc).isoformat()
+    with lock, conn:
+        conn.execute("DELETE FROM feed_signals WHERE kind = ?", (kind,))
+        conn.executemany("INSERT INTO feed_signals VALUES (?, ?, ?)", [(i, kind, now) for i in dict.fromkeys(arxiv_ids)])
+
+
+def clear_signal(arxiv_id: str, kind: str) -> None:
+    with lock, conn:
+        conn.execute("DELETE FROM feed_signals WHERE arxiv_id = ? AND kind = ?", (arxiv_id, kind))
+
+
+def get_meta(key: str) -> str | None:
+    with lock:
+        row = conn.execute("SELECT value FROM feed_meta WHERE key = ?", (key,)).fetchone()
+    return row[0] if row else None
+
+
+def set_meta(key: str, value: str) -> None:
+    with lock, conn:
+        conn.execute("INSERT OR REPLACE INTO feed_meta VALUES (?, ?)", (key, value))
 
 
 def get_cards(paper_id: int) -> SummaryCards | None:
