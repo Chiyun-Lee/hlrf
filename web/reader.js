@@ -63,12 +63,16 @@ async function renderReader(container, paperId, p) {
   // Methods pins from an agent review on figures and tables (pins.js).
   showPins(container, paperId, p);
 
-  // Draw pages shortly before they scroll into view; their notes are asked for earlier (nearbyNotes).
+  // Draw pages shortly before they scroll into view; ask for their notes earlier, while they're near (askForNotes).
   const seen = new IntersectionObserver(
     (entries) => entries.filter((e) => e.isIntersecting).forEach((e) => (seen.unobserve(e.target), e.target.draw())),
     { rootMargin: DRAW_AHEAD },
   );
-  pages.forEach((el) => (seen.observe(el), nearbyNotes.observe(el)));
+  const near = new IntersectionObserver(
+    (entries) => (entries.forEach((e) => (e.isIntersecting && !e.target.asked ? waiting.add(e.target) : waiting.delete(e.target))), askForNotes()),
+    { rootMargin: NOTES_AHEAD },
+  );
+  pages.forEach((el) => (seen.observe(el), near.observe(el)));
 
   // Highlight text (in a note or the original) to ask about it; see chat.js.
   enableAsk(container, paperId);
@@ -122,13 +126,6 @@ function pageView(paperId, page, i, pdf) {
 // at a time, nearest the screen first, and only pages still near it by then (a fast scroll passes most by).
 const waiting = new Set(); // pages near the screen whose notes haven't been asked for
 let asking = 0;
-const nearbyNotes = new IntersectionObserver(
-  (entries) => {
-    entries.forEach((e) => (e.isIntersecting ? waiting.add(e.target) : waiting.delete(e.target)));
-    askForNotes();
-  },
-  { rootMargin: NOTES_AHEAD },
-);
 
 function askForNotes() {
   const away = (el) => {
@@ -139,7 +136,7 @@ function askForNotes() {
   while (asking < NOTES_AT_ONCE && waiting.size) {
     const el = [...waiting].reduce((a, b) => (away(b) < away(a) ? b : a));
     waiting.delete(el);
-    nearbyNotes.unobserve(el);
+    el.asked = true;
     asking++;
     el.loadNotes().finally(() => (asking--, askForNotes()));
   }
