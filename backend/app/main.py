@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import abstract as graphical
-from . import db, extract, feed, llm, pins, pitch, proof, quiz, summarize, tutor
+from . import db, extract, feed, llm, pins, pitch, proof, quiz, review, summarize, tutor
 from .schemas import GraphicalAbstract, Note, PageSummary, Paper, PaperPins, Pitch, Proof, Quiz
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
@@ -72,6 +72,7 @@ def get_paper(paper_id: int) -> dict:
 def delete_paper(paper_id: int) -> None:
     if not db.delete(paper_id):
         raise HTTPException(404)
+    review.discard(paper_id)  # stop its review and delete its files: SQLite may give its id to the next paper
 
 
 @app.get("/papers/{paper_id}/pdf")
@@ -141,6 +142,49 @@ def get_summary(paper_id: int, page: int) -> PageSummary:
 def get_pins(paper_id: int) -> PaperPins | None:
     """Methods pins for the paper's figures and tables (app/pins.py); null when it has none."""
     return pins.for_paper(get_paper_or_404(paper_id))
+
+
+# --- Agent review: Claude Code reviews the paper in the background and writes its pins (app/review.py) ---
+
+
+class ReviewRequest(BaseModel):
+    depth: Literal["full", "quick"] = "full"  # full re-runs the authors' code (about 2 h); quick only reads (about 15 min)
+
+
+@app.post("/papers/{paper_id}/review", status_code=202)
+def start_review(paper_id: int, req: ReviewRequest | None = None) -> review.Status:
+    get_paper_or_404(paper_id)
+    try:
+        return review.start(paper_id, (req or ReviewRequest()).depth)
+    except review.CantStart as e:
+        raise HTTPException(e.status, str(e))
+
+
+@app.get("/papers/{paper_id}/review")
+def get_review(paper_id: int, after: int = 0) -> review.Status | None:
+    """The review's state, with its live view from event `after` on; null if the paper was never reviewed."""
+    get_paper_or_404(paper_id)
+    return review.status(paper_id, after)
+
+
+@app.delete("/papers/{paper_id}/review", status_code=204)
+def stop_review(paper_id: int) -> None:
+    get_paper_or_404(paper_id)
+    review.stop(paper_id)
+
+
+@app.get("/papers/{paper_id}/review/report")
+def get_review_report(paper_id: int) -> Response:
+    """The review itself, as Markdown."""
+    if (text := review.report(paper_id)) is None:
+        raise HTTPException(404)
+    return Response(text, media_type="text/plain; charset=utf-8")
+
+
+@app.get("/reviews")
+def list_reviews() -> dict[str, dict]:
+    """{paper_id: {state, depth, progress, stage_title}} for every paper with a review, running or finished."""
+    return review.all_reviews()
 
 
 @app.get("/papers/{paper_id}/abstract")
