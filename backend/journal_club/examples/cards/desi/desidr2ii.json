@@ -1,0 +1,113 @@
+{
+  "id": "desidr2ii",
+  "citekey": "desidr2ii",
+  "title": "DESI DR2 Results II: Measurements of Baryon Acoustic Oscillations and Cosmological Constraints",
+  "year": 2025,
+  "date": "2025-03-18",
+  "authors": [
+    "DESI Collaboration (M. Abdul Karim)"
+  ],
+  "abstract": "arXiv:2503.14738. The paper asks whether flat LCDM still fits the expansion history once DESI's three-year baryon acoustic oscillation (BAO) data are combined with the CMB and supernovae. The data are BAO scales from more than 14 million galaxies and quasars (DESI DR2) in six galaxy and quasar redshift bins at 0.1 < z < 2.1, together covering an effective volume above 42 Gpc^3, plus a companion Lyman-alpha forest BAO measurement at z = 2.33. BAO are measured with blinded template fits to two-point clustering after reconstruction and fit by MCMC in LCDM and the w0waCDM extension. DESI alone gives Omega_m = 0.2975 +/- 0.0086 and h r_d = 101.54 +/- 0.73 Mpc, 40% tighter than DR1 and consistent with DR1 and SDSS; BBN-calibrated BAO give H0 = 68.51 +/- 0.58 km/s/Mpc. In LCDM the DESI parameters are in 2.3 sigma tension with the CMB. Allowing w(a) = w0 + wa(1 - a) resolves this: DESI+CMB prefer w0waCDM over LCDM at 3.1 sigma, and adding supernovae gives 2.8, 3.8 or 4.2 sigma with Pantheon+, Union3 or DESY5; all combinations give w0 > -1 and wa < 0, implying a phantom crossing near z ~ 0.4. DESI+CMB also bound the neutrino mass sum below 0.064 eV in LCDM (0.16 eV in w0waCDM). The authors conclude LCDM is being challenged unless an unknown systematic error affects one or more of the datasets, leaving open the supernova calibration across redshift, the meaning of phantom crossing, and the near-conflict between the neutrino bound and oscillation experiments.",
+  "claims": [
+    {
+      "text": "The w0waCDM dynamical dark energy model is preferred over LCDM at 3.1 sigma from DESI DR2 BAO combined with CMB data alone, without any supernovae.",
+      "quote": {
+        "paper_id": "desidr2ii",
+        "text": "This solution is preferred over ΛCDM at 3 .1σ for the combination of DESI BAO and CMB data.",
+        "loc": "Abstract"
+      }
+    },
+    {
+      "text": "Adding supernovae to DESI+CMB changes the preference for evolving dark energy to 2.8 sigma (Pantheon+), 3.8 sigma (Union3) or 4.2 sigma (DESY5), so only Union3 and DESY5 raise it above the SNe-free 3.1 sigma.",
+      "quote": {
+        "paper_id": "desidr2ii",
+        "text": "When also including SNe, the preference for a dynamical dark energy model over ΛCDM ranges from 2 .8 − 4.2σ depending on which SNe sample is used.",
+        "loc": "Abstract"
+      }
+    },
+    {
+      "text": "Within flat LCDM, the DESI DR2 BAO parameters (Omega_m, h r_d) are in 2.3 sigma tension with the CMB, up from 1.9 sigma in DR1.",
+      "quote": {
+        "paper_id": "desidr2ii",
+        "text": "the model parameters obtained from this fit are now in 2.3 σ tension with those derived from the CMB, increased from 1.9 σ in DR1",
+        "loc": "Sec. IX"
+      }
+    },
+    {
+      "text": "The headline significances are frequentist translations of the change in chi-squared at the maximum a posteriori point between the best-fit LCDM and w0waCDM models, with two extra degrees of freedom (Wilks' theorem).",
+      "quote": {
+        "paper_id": "desidr2ii",
+        "text": "Our primary measure of the statistical significance of preference for evolving dark energy from a given data combination is based on ∆ χ2MAP between the best-fit ΛCDM and w0waCDM models for that combination.",
+        "loc": "Sec. VII"
+      }
+    },
+    {
+      "text": "The isotropic BAO distance D_V/r_d is measured to 1.54% for the QSO sample and to 0.45% for the composite LRG3+ELG1 sample, sub-percent for every tracer except the QSO.",
+      "quote": {
+        "paper_id": "desidr2ii",
+        "text": "ranges from 1.54% (for the QSO) down to just 0.45% for our most constraining composite LRG3+ELG1 sample",
+        "loc": "Sec. IX"
+      }
+    },
+    {
+      "text": "The DR1 ~3 sigma discrepancy with the eBOSS LRG D_M/r_d at z ~ 0.7 has shrunk to 1.5-2.6 sigma in DR2 and the paper finds no significant discrepancy with SDSS overall.",
+      "quote": {
+        "paper_id": "desidr2ii",
+        "text": "We conclude that there is no significant discrepancy between the DR2 measurements and those from SDSS.",
+        "loc": "Sec. III.C"
+      }
+    }
+  ],
+  "methods": [
+    "Template BAO fits to galaxy/quasar two-point clustering after density-field reconstruction, yielding isotropic (alpha_iso) and Alcock-Paczynski (alpha_AP) scaling parameters per tracer, converted to D_V/r_d, D_M/r_d and D_H/r_d at an effective redshift (Sec. III).",
+    "Catalogue-level blinding of the DR2 data until validation tests in a supporting paper were passed; DR1 analysis pipeline largely reused with a fainter BGS magnitude cut and quadrupole information in QSO fits (Sec. II.A, IX).",
+    "Cosmological inference with Cobaya (Metropolis-Hastings MCMC) and CAMB; BAO-only fits sample Omega_m and h r_d, BBN-calibrated fits sample H0 and omega_b, CMB fits sample the six base parameters plus extensions (Sec. V).",
+    "Model comparison via Delta chi^2_MAP between nested LCDM and w0waCDM best fits, translated to N sigma with 2 degrees of freedom, cross-checked with the Deviance Information Criterion (Sec. VII, Table VI).",
+    "Robustness checks: early-Universe-only CMB priors on (theta_*, omega_b, omega_bc), dropping CMB lensing, excluding z < 0.1 SNe, and replacing the CMB with DES Y3 3x2pt (Sec. VII.C, Fig. 14)."
+  ],
+  "data": [
+    "DESI DR2 LSS catalogues (main survey, 14 May 2021 to 9 April 2024): 1.19M BGS, 4.47M LRG, 6.53M ELG, 2.06M QSO good redshifts over ~10,000-12,400 deg^2 (Table II); six galaxy/quasar BAO redshift bins at 0.1 < z < 2.1 (BGS, LRG1, LRG2, LRG3+ELG1, ELG2, QSO; Table III).",
+    "DESI DR2 Lyman-alpha forest auto- and cross-correlation BAO at z_eff = 2.33 from the companion paper, with a 0.3% theoretical systematic added (Sec. II.B, III.B).",
+    "External: Planck PR4 CamSpec TT/TE/EE plus Planck+ACT DR6 lensing (alternatives Plik and L-H), BBN prior omega_b h^2 = 0.02218 +/- 0.00055, and three SNe compilations: Pantheon+, Union3, DESY5 (Sec. IV).",
+    "DES Y3 3x2pt weak lensing and galaxy clustering chains, reweighted with normalizing flows to combine with DESI and SNe (Sec. IV.D).",
+    "Whether homogeneous SNe samples from ZTF and LSST will resolve the low-z versus high-z calibration question that drives the spread between 2.8 and 4.2 sigma (Sec. VII.C).",
+    "Whether the apparent phantom crossing at z ~ 0.4 is physical, or whether NEC-respecting dark energy or modified gravity models can fit DESI+CMB+SNe equally well (Sec. VII.A).",
+    "How to interpret neutrino mass bounds that approach or undercut the oscillation lower limit of 0.059 eV, including the posterior preference for negative effective masses in LCDM (Sec. VIII, IX).",
+    "Whether an unidentified systematic in one of BAO, CMB or SNe, rather than new physics, explains the growing LCDM tensions; sharper future DESI analyses are expected to tell (Sec. IX)."
+  ],
+  "limits": [
+    {
+      "text": "The preference for evolving dark energy, at roughly 3 to 4 sigma, has not reached the 5 sigma standard for claiming new physics.",
+      "quote": {
+        "paper_id": "desidr2ii",
+        "text": "This level of significance is not trivially dismissed, even if it does not yet rise to the 5 σ threshold commonly accepted for establishing new physics.",
+        "loc": "Sec. VII.C"
+      }
+    },
+    {
+      "text": "The strength of the evidence depends on which supernova compilation is used, and no compilation observes low- and high-redshift SNe in one uniform programme, so cross-redshift calibration is a concern.",
+      "quote": {
+        "paper_id": "desidr2ii",
+        "text": "Unfortunately, no SNe compilation yet exists in which objects from both redshift regimes were collected as part of a uniform observational program.",
+        "loc": "Sec. VII.C"
+      }
+    },
+    {
+      "text": "Significance levels vary with the external data chosen and no combination exceeds 4.2 sigma.",
+      "quote": {
+        "paper_id": "desidr2ii",
+        "text": "The DR2 data presented here have sharpened this evidence, although significance levels still vary depending on the external data used—particularly the choice of SNe sample—and no combination exceeds 4.2σ.",
+        "loc": "Sec. IX"
+      }
+    },
+    {
+      "text": "The equation of state is inferred only indirectly through distances, so NEC-respecting models that avoid phantom crossing cannot be fully excluded by the parametrized fits.",
+      "quote": {
+        "paper_id": "desidr2ii",
+        "text": "However, the equation of state is not directly observable, and we only observe quantities, such as distances, that depend indirectly on w(z).",
+        "loc": "Sec. VII.A"
+      }
+    }
+  ],
+  "fulltext_excerpt": "---\nid: 2503.14738\ncitekey: desidr2ii\ntitle: \"DESI DR2 Results II: Measurements of Baryon Acoustic Oscillations and Cosmological Constraints\"\nyear: 2025\ndate: 2025-03-18\nauthors: [\"DESI Collaboration (M. Abdul Karim)\"]\narxiv: 2503.14738\nrole: target\n---\n\n# Executive summary\nThe paper asks whether flat LCDM still fits the expansion history once DESI's three-year baryon acoustic oscillation (BAO) data are combined with the CMB and supernovae. The data are BAO scales from more than 14 million galaxies and quasars (DESI DR2) in six galaxy and quasar redshift bins at 0.1 < z < 2.1, together covering an effective volume above 42 Gpc^3, plus a companion Lyman-alpha forest BAO measurement at z = 2.33. BAO are measured with blinded template fits to two-point clustering after reconstruction and fit by MCMC in LCDM and the w0waCDM extension. DESI alone gives Omega_m = 0.2975 +/- 0.0086 and h r_d = 101.54 +/- 0.73 Mpc, 40% tighter than DR1 and consistent with DR1 and SDSS; BBN-calibrated BAO give H0 = 68.51 +/- 0.58 km/s/Mpc. In LCDM the DESI parameters are in 2.3 sigma tension with the CMB. Allowing w(a) = w0 + wa(1 - a) resolves this: DESI+CMB prefer w0waCDM over LCDM at 3.1 sigma, and adding supernovae gives 2.8, 3.8 or 4.2 sigma with Pantheon+, Union3 or DESY5; all combinations give w0 > -1 and wa < 0, implying a phantom crossing near z ~ 0.4. DESI+CMB also bound the neutrino mass sum below 0.064 eV in LCDM (0.16 eV in w0waCDM). The authors conclude LCDM is being challenged unless an unknown systematic error affects one or more of the datasets, leaving open the supernova calibration across redshift, the meaning of phantom crossing, and the near-conflict between the neutrino bound and oscillation experiments.\n\n## Claims\n- claim: The w0waCDM dynamical dark energy model is preferred over LCDM at 3.1 sigma from DESI DR2 BAO combined with CMB data alone, without any supernovae.\n  quote: \"This solution is preferred over ΛCDM at 3 .1σ for the combination of DESI BAO and CMB data.\"\n  loc: \"Abstract\"\n- claim: Adding supernovae to DESI+CMB changes the preference for evolving dark energy to 2.8 sigma (Pantheon+), 3.8 sigma (Union3) or 4.2 sigma (DESY5), so only Union3 and DESY5 raise it above the SNe-free 3.1 sigma.\n  quote: \"When also including SNe, the preference for a dynamical dark energy model over ΛCDM ranges from 2 .8 − 4.2σ depending on which SNe sample is used.\"\n  loc: \"Abstract\"\n- claim: Within flat LCDM, the DESI DR2 BAO parameters (Omega_m, h r_d) are in 2.3 sigma tension with the CMB, up from 1.9 sigma in DR1.\n  quote: \"the model parameters obtained from this fit are now in 2.3 σ tension with those derived from the CMB, increased from 1.9 σ in DR1\"\n  loc: \"Sec. IX\"\n- claim: The headline significances are frequentist translations of the change in chi-squared at the maximum a posteriori point between the best-fit LCDM and w0waCDM models, with two extra degrees of freedom (Wilks' theorem).\n  quote: \"Our primary measure of the statistical significance of preference for evolving dark energy from a given data combination is based on ∆ χ2MAP between the best-fit ΛCDM and w0waCDM models for that combination.\"\n  loc: \"Sec. VII\"\n- claim: The isotropic BAO distance D_V/r_d is measured to 1.54% for the QSO sample and to 0.45% for the composite LRG3+ELG1 sample, sub-percent for every tracer except the QSO.\n  quote: \"ranges from 1.54% (for the QSO) down to just 0.45% for our most constraining composite LRG3+ELG1 sample\"\n  loc: \"Sec. IX\"\n- claim: The DR1 ~3 sigma discrepancy with the eBOSS LRG D_M/r_d at z ~ 0.7 has shrunk to 1.5-2.6 sigma in DR2 and the paper finds no significant discrepancy with SDSS overall.\n  quote: \"We conclude that there is no significant discrepancy between the DR2 measurements and those from SDSS.\"\n  loc: \"Sec. III.C\"\n\n## Methods\n- Template BAO fits to galaxy/quasar two-point clustering after density-field reconstruction, yielding isotropic (alpha_iso) and Alcock-Paczynski (alpha_AP) scaling parameters per tracer, converted to D_V/r_d, D_M/r_d and D_H/r_d at an effective redshift (Sec. III).\n- Catalogue-level blinding of the DR2 data until validation tests in a supporting paper were passed; DR1 analysis pipeline largely reused with a fainter BGS magnitude cut and quadrupole information in QSO fits (Sec. II.A, IX).\n- Cosmological inference with Cobaya (Metropolis-Hastings MCMC) and CAMB; BAO-only fits sample Omega_m and h r_d, BBN-calibrated fits sample H0 and omega_b, CMB fits sample the six base parameters plus extensions (Sec. V).\n- Model comparison via Delta chi^2_MAP between nested LCDM and w0waCDM best fits, translated to N sigma with 2 degrees of freedom, cross-checked with the Deviance Information Criterion (Sec. VII, Table VI).\n- Robustness checks: early-Universe-only CMB priors on (theta_*, omega_b, omega_bc), dropping CMB lensing, excluding z < 0.1 SNe, and replacing the CMB with DES Y3 3x2pt (Sec. VII.C, Fig. 14).\n\n## Data\n- DESI DR2 LSS catalogues (main survey, 14 May 2021 to 9 April 2024): 1.19M BGS, 4.47M LRG, 6.53M ELG, 2.06M QSO good redshifts over ~10,000-12,400 deg^2 (Table II); six galaxy/quasar BAO redshift bins at 0.1 < z < 2.1 (BGS, LRG1, LRG2, LRG3+ELG1, ELG2, QSO; Table III).\n- DESI DR2 Lyman-alpha forest auto- and cross-correlation BAO at z_eff = 2.33 from the companion paper, with a 0.3% theoretical systematic added (Sec. II.B, III.B).\n- External: Planck PR4 CamSpec TT/TE/EE plus Planck+ACT DR6 lensing (alternatives Plik and L-H), BBN prior omega_b h^2 = 0.02218 +/- 0.00055, and three SNe compilations: Pantheon+, Union3, DESY5 (Sec. IV).\n- DES Y3 3x2pt weak lensing and galaxy clustering chains, reweighted with normalizing flows to combine with DESI and SNe (Sec. IV.D).\n\n## Limitations\n- limit: The preference for evolving dark energy, at roughly 3 to 4 sigma, has not reached the 5 sigma standard for claiming new physics.\n  quote: \"This level of significance is not trivially dismissed, even if it does not yet rise to the 5 σ threshold commonly accepted for establishing new physics.\"\n  loc: \"Sec. VII.C\"\n- limit: The strength of the evidence depends on which supernova compilation is used, and no compilation observes low- and high-redshift SNe in one uniform programme, so cross-redshift calibration is a concern.\n  quote: \"Unfortunately, no SNe compilation yet exists in which objects from both redshift regimes were collected as part of a uniform observational program.\"\n  loc: \"Sec. VII.C\"\n- limit: Significance levels vary with the external data chosen and no combination exceeds 4.2 sigma.\n  quote: \"The DR2 data presented here have sharpened this evidence, although significance levels still vary depending on the external data used—particularly the choice of SNe sample—and no combination exceeds 4.2σ.\"\n  loc: \"Sec. IX\"\n- limit: The equation of state is inferred only indirectly through distances, so NEC-respecting models that avoid phantom crossing cannot be fully excluded by the parametrized fits.\n  quote: \"However, the equation of state is not directly observable, and we only observe quantities, such as distances, that depend indirectly on w(z).\"\n  loc: \"Sec. VII.A\"\n\n## Open questions\n- Whether homogeneous SNe samples from ZTF and LSST will resolve the low-z versus high-z calibration question that drives the spread between 2.8 and 4.2 sigma (Sec. VII.C).\n- Whether the apparent phantom crossing at z ~ 0.4 is physical, or whether NEC-respecting dark energy or modified gravity models can fit DESI+CMB+SNe equally well (Sec. VII.A).\n- How to interpret neutrino mass bounds that approach or undercut the oscillation lower limit of 0.059 eV, including the posterior preference for negative effective masses in LCDM (Sec. VIII, IX).\n- Whether an unidentified systematic in one of BAO, CMB or SNe, rather than new physics, explains the growing LCDM tensions; sharper future DESI analyses are expected to tell (Sec. IX).\n"
+}

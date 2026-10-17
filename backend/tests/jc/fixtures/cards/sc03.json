@@ -1,0 +1,56 @@
+{
+  "id": "sc03",
+  "citekey": "laurent2020stitchgraph",
+  "title": "StitchGraph: non-parametric graph integration of single-cell batches",
+  "year": 2020,
+  "date": "2020-11-20",
+  "authors": [
+    "C. Laurent",
+    "D. Okafor"
+  ],
+  "abstract": "StitchGraph builds a mutual-neighbour graph across batches and stitches matching populations without a parametric model of the batch effect. It preserves rare populations and is insensitive to the neighbourhood size, evaluated on human PBMC.",
+  "claims": [
+    {
+      "text": "A cross-batch mutual-neighbour graph aligns populations without a parametric model.",
+      "quote": {
+        "paper_id": "sc03",
+        "text": "A mutual-neighbour graph built across batches aligns matching populations without any parametric model of the batch effect.",
+        "loc": "p3 §2.1"
+      }
+    },
+    {
+      "text": "Rare populations under fifty cells are preserved.",
+      "quote": {
+        "paper_id": "sc03",
+        "text": "StitchGraph preserves rare populations of fewer than fifty cells that parametric methods merge into neighbouring clusters.",
+        "loc": "p6 §3.3"
+      }
+    },
+    {
+      "text": "Insensitive to neighbourhood size.",
+      "quote": {
+        "paper_id": "sc03",
+        "text": "Integration quality is insensitive to the neighbourhood size anywhere between ten and fifty neighbours.",
+        "loc": "p7 §3.5"
+      }
+    }
+  ],
+  "methods": [
+    "cross-batch mutual nearest neighbours",
+    "graph stitching"
+  ],
+  "data": [
+    "human PBMC datasets from four laboratories"
+  ],
+  "limits": [
+    {
+      "text": "Only human PBMC evaluated.",
+      "quote": {
+        "paper_id": "sc03",
+        "text": "All evaluations use human peripheral blood mononuclear cells, so generalisation to solid tissue remains untested.",
+        "loc": "p9 §5"
+      }
+    }
+  ],
+  "fulltext_excerpt": "We avoid a parametric correction. A mutual-neighbour graph built across batches aligns matching populations without any parametric model of the batch effect. Edges that are mutual in both directions define the stitching set, and the remaining cells follow their nearest stitched neighbour. StitchGraph preserves rare populations of fewer than fifty cells that parametric methods merge into neighbouring clusters. In the PBMC collection this includes plasmacytoid dendritic cells and a small platelet cluster. The one free parameter is the neighbourhood size. Integration quality is insensitive to the neighbourhood size anywhere between ten and fifty neighbours. Runtime grows linearly with the number of cells. All evaluations use human peripheral blood mononuclear cells, so generalisation to solid tissue remains untested."
+}

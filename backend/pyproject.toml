@@ -12,6 +12,8 @@ dependencies = [
     "python-dotenv",
     "scikit-learn",  # For you's ranking
     "tzdata",  # arXiv's listing deadline is in US Eastern time; Windows has no time-zone database
+    "pydantic>=2.0",  # journal_club's cards and events
+    "typer>=0.12",  # the `jc` command (journal_club/cli.py)
 ]
 
 [project.optional-dependencies]
@@ -23,8 +25,14 @@ claude-code = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[project.scripts]
+jc = "journal_club.cli:app"
+
 [tool.hatch.build.targets.wheel]
-packages = ["app"]
+packages = ["app", "journal_club"]
 
 [dependency-groups]
 dev = ["pytest"]
+
+[tool.pytest.ini_options]
+markers = ["live: calls the real Anthropic API; skipped unless JC_LIVE=1 (journal club tests)"]

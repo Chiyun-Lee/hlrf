@@ -31,6 +31,10 @@ RULE_GAP = 24  # ...or before another of its rules
 WORDS = {"title": 4, "basic": 22, "researcher": 45}  # most words per pin line: the title sits on the button
 MAX_PINS = 4
 VERDICT_WORDS = 60
+CLAIM_WORDS = {"claim": 20, "paper": 12, "rerun": 12, "check": 35}  # most words per field of a checked claim
+MAX_CLAIMS = 8
+MAX_MAIN_PROBLEMS = 5
+PROBLEM_WORDS = 45
 # A caption starts with its label and then punctuation, which a sentence that mentions it doesn't have: "Figure 3.",
 # "FIG. 3:", "Table II.", "Fig. A1 |", but not "Figure 3 shows". A label without punctuation ("Fig. 3 The fit",
 # Springer's style) only counts when no caption of that label has punctuation and a figure sits right against it.
@@ -74,7 +78,9 @@ def for_paper(paper_id: int, paper: Paper) -> PaperPins | None:
     found = [t for t in pins.targets if fits(t, paper)]
     if len(found) < len(pins.targets):
         log.warning("pins for paper %s: %d of %d targets don't match this PDF", paper_id, len(pins.targets) - len(found), len(pins.targets))
-    return pins.model_copy(update={"targets": found}) if found else None
+    if not (found or pins.claims or pins.main_problems):
+        return None
+    return pins.model_copy(update={"targets": found})  # the claims are about the paper, whichever PDF it is
 
 
 def fits(target: PinTarget, paper: Paper) -> bool:
@@ -106,6 +112,7 @@ def problems(pins: PaperPins, paper: Paper, found: list[PinTarget] | None = None
         out.append(f"`arxiv_id` is {pins.arxiv_id} but this paper is {own}: use {own} (no version)")
     if not pins.targets:
         out.append("no targets: give every figure and table in targets.json a Data provenance pin")
+    out += claim_problems(pins)
     known = {t.label: t for t in found or []}
     seen = set()
     for t in pins.targets:
@@ -129,6 +136,27 @@ def problems(pins: PaperPins, paper: Paper, found: list[PinTarget] | None = None
             for field, limit in WORDS.items():
                 if (n := len(getattr(pin, field).split())) > limit:
                     out.append(f'{t.label}, pin "{pin.title}": `{field}` has {n} words; cut it to {limit}')
+    return out
+
+
+def claim_problems(pins: PaperPins) -> list[str]:
+    """The rules for `claims` and `main_problems`, which the summary cards' Reproduction card shows."""
+    out = []
+    if len(pins.claims) > MAX_CLAIMS:
+        out.append(f"{len(pins.claims)} claims: keep the {MAX_CLAIMS} that matter most")
+    for k, c in enumerate(pins.claims, 1):
+        for field, limit in CLAIM_WORDS.items():
+            if (n := len((getattr(c, field) or "").split())) > limit:
+                out.append(f"claim {k}: `{field}` has {n} words; cut it to {limit}")
+        if c.status == "untested" and c.rerun:
+            out.append(f'claim {k} is "untested" but has a `rerun`: give the status the re-run supports, or set `rerun` to null')
+        if c.status != "untested" and not (c.rerun or "").strip():
+            out.append(f'claim {k} is "{c.status}" without a `rerun`: say what the re-run or test gave, or mark it "untested"')
+    if len(pins.main_problems) > MAX_MAIN_PROBLEMS:
+        out.append(f"{len(pins.main_problems)} main problems: keep the {MAX_MAIN_PROBLEMS} most important")
+    for k, text in enumerate(pins.main_problems, 1):
+        if (n := len(text.split())) > PROBLEM_WORDS:
+            out.append(f"main problem {k} has {n} words; cut it to {PROBLEM_WORDS}")
     return out
 
 

@@ -1,0 +1,56 @@
+{
+  "id": "sc02",
+  "citekey": "osei2020deepmerge",
+  "title": "DeepMerge: a shared variational latent space for multi-batch integration",
+  "year": 2020,
+  "date": "2020-05-11",
+  "authors": [
+    "K. Osei",
+    "M. Lindqvist"
+  ],
+  "abstract": "DeepMerge learns one variational latent space across batches so that batch and biology separate without a reference batch. It outperforms every linear integration method on six benchmark datasets, at the cost of GPU training time.",
+  "claims": [
+    {
+      "text": "DeepMerge beats every linear method on six benchmarks.",
+      "quote": {
+        "paper_id": "sc02",
+        "text": "DeepMerge outperforms every linear integration method on all six benchmark datasets by both silhouette and cell-type retention scores.",
+        "loc": "p5 §4.1"
+      }
+    },
+    {
+      "text": "A shared latent space separates batch from biology without a reference.",
+      "quote": {
+        "paper_id": "sc02",
+        "text": "A shared variational latent space learned across batches separates batch from biology without designating a reference batch.",
+        "loc": "p3 §2.2"
+      }
+    }
+  ],
+  "methods": [
+    "variational autoencoder",
+    "batch-conditional decoder"
+  ],
+  "data": [
+    "six benchmark scRNA-seq datasets"
+  ],
+  "limits": [
+    {
+      "text": "Needs a GPU and ninety minutes per million cells.",
+      "quote": {
+        "paper_id": "sc02",
+        "text": "Training DeepMerge requires a GPU and roughly ninety minutes per million cells, which limits interactive use.",
+        "loc": "p8 §5"
+      }
+    },
+    {
+      "text": "Untested below ten thousand cells.",
+      "quote": {
+        "paper_id": "sc02",
+        "text": "We did not evaluate datasets with fewer than ten thousand cells, where the latent model may overfit the batch factor.",
+        "loc": "p8 §5.1"
+      }
+    }
+  ],
+  "fulltext_excerpt": "We learn a non-linear encoder shared by all batches. A shared variational latent space learned across batches separates batch from biology without designating a reference batch. The decoder receives the batch label so that the latent code need not carry it. On the benchmark collection the gain is consistent. DeepMerge outperforms every linear integration method on all six benchmark datasets by both silhouette and cell-type retention scores. The margin is largest on datasets with four or more batches. Cost is the obvious drawback. Training DeepMerge requires a GPU and roughly ninety minutes per million cells, which limits interactive use. A CPU-only run of the smallest dataset took eleven hours. We did not evaluate datasets with fewer than ten thousand cells, where the latent model may overfit the batch factor."
+}

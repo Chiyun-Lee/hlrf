@@ -1,0 +1,56 @@
+{
+  "id": "sc06",
+  "citekey": "brandt2022compute",
+  "title": "Linear models match deep integration at a fiftieth of the compute",
+  "year": 2022,
+  "date": "2022-09-30",
+  "authors": [
+    "E. Brandt",
+    "J. Nwosu"
+  ],
+  "abstract": "A regularised linear model matches a deep latent model within one silhouette point on six benchmark datasets at one fiftieth of the compute, and twenty linear components capture ninety percent of the deep latent variance.",
+  "claims": [
+    {
+      "text": "A regularised linear model matches the deep model at a fiftieth of the compute.",
+      "quote": {
+        "paper_id": "sc06",
+        "text": "A regularised linear model matched the deep latent model within one point of silhouette score on all six benchmark datasets at one fiftieth of the compute.",
+        "loc": "p4 §3.1"
+      }
+    },
+    {
+      "text": "Twenty linear components capture ninety percent of the deep latent variance.",
+      "quote": {
+        "paper_id": "sc06",
+        "text": "Ninety percent of the variance explained by the deep latent space is captured by its first twenty linear components.",
+        "loc": "p5 §3.2"
+      }
+    }
+  ],
+  "methods": [
+    "regularised linear integration",
+    "variance decomposition of latent spaces"
+  ],
+  "data": [
+    "six benchmark scRNA-seq datasets"
+  ],
+  "limits": [
+    {
+      "text": "Only one deep configuration was compared.",
+      "quote": {
+        "paper_id": "sc06",
+        "text": "We compared against a single deep model configuration and did not tune its architecture for each dataset.",
+        "loc": "p8 §5"
+      }
+    },
+    {
+      "text": "Conservation is scored against curated labels, not ground truth.",
+      "quote": {
+        "paper_id": "sc06",
+        "text": "Like prior benchmarks, our comparison scores conservation against curated labels rather than against an experimental ground truth.",
+        "loc": "p8 §5.2"
+      }
+    }
+  ],
+  "fulltext_excerpt": "We tuned a ridge-penalised linear model with the same budget as the deep model. A regularised linear model matched the deep latent model within one point of silhouette score on all six benchmark datasets at one fiftieth of the compute. The deep model retained a small advantage only on the dataset with the most batches. Ninety percent of the variance explained by the deep latent space is captured by its first twenty linear components. The remaining variance is concentrated in a handful of rare populations. Two caveats apply. We compared against a single deep model configuration and did not tune its architecture for each dataset. A tuned deep model may widen the gap. Like prior benchmarks, our comparison scores conservation against curated labels rather than against an experimental ground truth."
+}

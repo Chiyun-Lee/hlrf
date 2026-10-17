@@ -4,6 +4,7 @@
 //   #/for-you     the latest arXiv listing ranked for you (foryou.js)
 //   #/revision    Revision: Duolingo-style reviews across papers (revision.js)
 //   #/me          My learning: what the app has learned about you, your questions and quizzes
+//   #/club        Journal club: paper agents map, debate and propose directions overnight (club.js)
 // To add a view: write a function that renders into `app` and add a route below.
 
 const app = document.getElementById("app");
@@ -35,13 +36,16 @@ const routes = [
   [/^#\/for-you(?:\/(\d{4}-\d{2}-\d{2}))?$/, forYou],
   [/^#\/revision$/, revisionPage],
   [/^#\/me$/, me],
+  [/^#\/club$/, clubPage],
+  [/^#\/club\/runs\/([A-Za-z0-9_-]+)$/, clubRun],
+  [/^#\/club\/runs\/([A-Za-z0-9_-]+)\/minutes$/, clubMinutes],
 ];
 
 async function route() {
   const [re, view] = routes.find(([re]) => re.test(location.hash)) ?? [/$/, notFound];
   closeChat();
   closeReview();
-  const tab = location.hash.startsWith("#/for-you") ? "for-you" : location.hash === "#/me" ? "me" : location.hash === "#/revision" ? "revision" : "library";
+  const tab = location.hash.startsWith("#/for-you") ? "for-you" : location.hash.startsWith("#/club") ? "club" : location.hash === "#/me" ? "me" : location.hash === "#/revision" ? "revision" : "library";
   document.querySelectorAll(".tabs a").forEach((a) => a.toggleAttribute("aria-current", a.dataset.tab === tab));
   app.innerHTML = `<p class="muted">Loading…</p>`;
   try {

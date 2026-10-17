@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from app import db, pins
 from app.main import app
-from app.schemas import Paper
+from app.schemas import CheckedClaim, Paper, PaperPins
 
 client = TestClient(app)
 
@@ -27,6 +27,24 @@ def test_shipped_pins_are_short_and_readable():
                 assert len(pin.title.split()) <= 4, pin.title
                 assert len(pin.basic.split()) <= 22, pin.basic
                 assert len(pin.researcher.split()) <= 45, pin.researcher
+        assert pins.claim_problems(paper_pins) == []
+
+
+def test_claim_rules():
+    """The Reproduction card's claims say only what was run, briefly."""
+    claim = {"claim": "j₀ is above 1.", "paper": "5.4σ", "rerun": "5.42σ", "status": "holds", "check": "Re-ran the notebooks."}
+    fine = PaperPins(reviewed="r", targets=[], claims=[claim], main_problems=["One problem."])
+    assert pins.claim_problems(fine) == []
+    bad = fine.model_copy(update={"claims": [
+        CheckedClaim(**claim | {"status": "untested"}),  # untested, yet a re-run number
+        CheckedClaim(**claim | {"rerun": None}),  # holds, with nothing run
+        CheckedClaim(**claim | {"check": "word " * 36}),
+    ] + [CheckedClaim(**claim)] * 6, "main_problems": ["word " * 46]})
+    found = pins.claim_problems(bad)
+    assert len(found) == 5 and "9 claims" in found[0] and "claim 1 is \"untested\"" in found[1]
+    assert 'claim 2 is "holds" without a `rerun`' in found[2] and "claim 3: `check` has 36 words" in found[3]
+    assert "main problem 1 has 46 words" in found[4]
+    assert pins.claim_problems(bad) == pins.problems(bad, cosmography())[1 : 1 + 5]  # after "no targets"
 
 
 def shipped(paper: Paper):
@@ -37,8 +55,10 @@ def test_pins_only_where_the_caption_matches():
     found = shipped(cosmography())
     assert found and found.reviewed and [t.label for t in found.targets] == ["Figure 1"]
     assert shipped(cosmography(url="https://arxiv.org/pdf/2506.22373"))  # any version or link form finds the file
-    assert shipped(cosmography(caption_y=600)) is None  # caption far below the stored box: another layout
-    assert shipped(cosmography(page=3)) is None  # figure moved to another page
+    # Another layout (caption far below the stored box, or the figure on another page): no pins on the figures, but the
+    # claims and the verdict are about the paper, so they stay
+    for other in (cosmography(caption_y=600), cosmography(page=3)):
+        assert shipped(other).targets == [] and shipped(other).claims == found.claims
     assert shipped(cosmography(url="https://arxiv.org/abs/2401.00001")) is None  # no pins written
     assert shipped(cosmography(url="https://example.org/paper.pdf")) is None  # not an arXiv paper
 
@@ -50,5 +70,6 @@ def test_pins_route():
     figure_1 = next(t for t in pins.load("2506.22373").targets if t.label == "Figure 1")
     assert found["targets"][0]["pins"] == [p.model_dump() for p in figure_1.pins]
     assert [p["kind"] for p in found["targets"][0]["pins"]] == ["data", "concern", "method"]
-    assert client.get(f"/papers/{db.save(cosmography(page=3))}/pins").json() is None
+    other_pdf = client.get(f"/papers/{db.save(cosmography(page=3))}/pins").json()  # no figure matches this PDF...
+    assert other_pdf["targets"] == [] and other_pdf["claims"] == found["claims"] != []  # ...but the claims still hold
     assert client.get("/papers/999999/pins").status_code == 404

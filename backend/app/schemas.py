@@ -98,13 +98,25 @@ class PinTarget(BaseModel):
     pins: list[Pin]
 
 
+class CheckedClaim(BaseModel):
+    """One of the paper's main claims as an agent review left it, for the Reproduction summary card (web/cards.js)."""
+
+    claim: str  # the paper's claim, in one line
+    paper: str  # its number or result as the paper gives it, e.g. "5.4σ"
+    rerun: str | None = None  # what re-running the code or testing it gave; None when nothing was run
+    status: Literal["holds", "partly", "fails", "untested"]  # after the re-run and the tests
+    check: str  # how it was checked, and what was found
+
+
 class PaperPins(BaseModel):
     """All the pins for one paper: an agent review's for a library paper (stored in the database), or shipped as one
-    JSON file per arXiv id in app/pins/."""
+    JSON file per arXiv id in app/pins/. `claims` and `main_problems` fill the summary cards' Reproduction card."""
 
     arxiv_id: str | None = None  # without the version; None for a paper not on arXiv
     reviewed: str  # what the pins rest on, shown under each pin
     verdict: str | None = None  # the review's bottom line, in 1-2 sentences
+    claims: list[CheckedClaim] = []  # the paper's main claims, most important first (a full review gives them)
+    main_problems: list[str] = []  # the review's main problems, most important first, one or two sentences each
     targets: list[PinTarget]
 
 
@@ -294,6 +306,8 @@ class SummaryCards(BaseModel):
     caveats: list[str]
     charts: list[Chart] = []
     figures: list[CardFigure] = []
+    notes_hash: str | None = None  # filled in by the backend: the notes the deck was made from (cards.notes_hash)
+    notes_changed: bool = False  # filled in when served: the notes have changed since, so a remake would differ
 
 
 class QuizQuestion(BaseModel):

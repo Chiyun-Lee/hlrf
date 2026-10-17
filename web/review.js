@@ -74,6 +74,7 @@ function update(r, s) {
   renderPanel(r);
   if (was?.state === "running" && s && s.state !== "running") {
     if (s.state === "done") window.showPins?.(r.doc, r.id, r.p); // the new pins, without a reload
+    window.refreshReproduction?.(r.id); // and the summary cards' Reproduction card, if they're open
     say(r, headline(s), true);
   }
 }

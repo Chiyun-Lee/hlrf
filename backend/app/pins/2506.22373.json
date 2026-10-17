@@ -2,6 +2,43 @@
   "arxiv_id": "2506.22373",
   "reviewed": "Agent review of arXiv:2506.22373v2 with paper2agent, 17 Oct 2026: agents re-ran the authors' notebooks and tested the claims with the verified code",
   "verdict": "The authors' code reproduces the Table II means, but the central claim doesn't hold: fitted the same way, a plain ΛCDM universe gives the same j₀ ≈ 2.3 and an equal or larger tension. The analysis measures the series' truncation error; it doesn't test ΛCDM.",
+  "claims": [
+    {
+      "claim": "Fitted to BAO and supernovae, the jerk j₀ sits above ΛCDM's j₀ = 1 (Table II).",
+      "paper": "j₀ = 2.04 (DESI + DESY5)",
+      "rerun": "2.05 (DESI + DESY5)",
+      "status": "holds",
+      "check": "The four emcee notebooks re-run at the authors' settings reproduce the Table II means; the 2σ limits agree only roughly."
+    },
+    {
+      "claim": "The departure from ΛCDM reaches 5.4σ with DESY5 supernovae.",
+      "paper": "5.4σ",
+      "rerun": "5.42σ; 3.9σ by profile likelihood",
+      "status": "partly",
+      "check": "The σ is (mean(j₀) − 1)/std of a skewed marginal. A profile likelihood gives 3.9σ; widening the s₀ prior gives 3.7σ."
+    },
+    {
+      "claim": "The data favour j₀ ≠ 1, a sign of physics beyond ΛCDM.",
+      "paper": "j₀ ≠ 1 at 2–5.4σ",
+      "rerun": "ΛCDM mocks also give j₀ ≈ 2.3",
+      "status": "fails",
+      "check": "Noiseless ΛCDM mocks fitted the same way give j₀ ≈ 2.3 and a spurious 2.8–5.4σ tension: the fit measures the series' truncation error."
+    },
+    {
+      "claim": "The 12 DESI DR2 distances are used as published (Table I).",
+      "paper": "DESI DR2 BAO",
+      "rerun": "Byte-identical to DESI's likelihood file",
+      "status": "holds",
+      "check": "Values and covariance compared with the official DESI DR2 file; the Lyα pair is combined correctly (D_V/rₛ = 31.27 ± 0.26)."
+    }
+  ],
+  "main_problems": [
+    "At the ΛCDM truth the 4th-order series misses the Lyα D_V point by 7.9% (9.7σ), so a high j₀ is what the shortcut gives, not new physics.",
+    "s₀ ends on its prior bound (10.0) in every fit and corr(j₀, s₀) ≈ 0.99; wider priors move DESY5 from 5.4σ to 3.7σ.",
+    "The quoted σ comes from a skewed marginal; a profile likelihood gives 2.1, 2.9, 3.3 and 3.9σ.",
+    "The DESY5 covariance is missing from the code release; the public copy gives χ²/dof 0.90, not 1.01.",
+    "No seed or convergence checks, and the H₀ prior is 50–90 in the code but 50–70 in the paper."
+  ],
   "targets": [
     {
       "label": "Table I",

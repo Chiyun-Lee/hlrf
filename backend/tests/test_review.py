@@ -112,6 +112,7 @@ def test_review_lifecycle(reviews):
     assert st["pins"] == 1 and st["report"] and st["error"] is None and st["finished_at"]
     assert st["verdict"] == getattr(reviews.saved[pid], "verdict", None)
     assert [t.label for t in reviews.saved[pid].targets] == ["Figure 1"]
+    assert reviews.saved[pid].claims == [] and reviews.saved[pid].main_problems  # a quick review re-runs nothing
     events = st["events"]
     assert [e["n"] for e in events] == list(range(st["n_events"]))
     assert {e["kind"] for e in events} == {"stage", "tool", "text", "error", "done"}
@@ -130,6 +131,20 @@ def test_review_lifecycle(reviews):
     assert client.post(f"/papers/{full}/review").json()["depth"] == "full"  # no body: a full review
     st = wait(full)
     assert st["state"] == "done" and len(st["stages"]) == 7 and any(e["sub"] for e in st["events"])
+    assert reviews.saved[full].claims  # for the Reproduction card
+
+
+def test_full_review_needs_claims(reviews):
+    """A full review re-ran the code, so pins.json must say how the paper's claims came out."""
+    pid = paper()
+    review.begin(pid, "full")
+    run = review.Run(pid, "full")
+    review.prepare(run)
+    pins_json = review.demo_pins(run) | {"claims": []}
+    (run.work / "pins.json").write_text(json.dumps(pins_json))
+    assert any("no `claims`" in p for p in run.check()[1])
+    quick = review.Run(pid, "quick")
+    assert not any("claims" in p for p in quick.check()[1])
 
 
 def test_starts_refused_and_stop(reviews, monkeypatch):

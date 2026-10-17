@@ -1,2 +1,3 @@
 - Prioritise simplicity, extendability and clarity. This is a project directory for a team hackathon. 
 - Add tests, guardrails and tools for reliability. 
+- The journal club (backend/journal_club/, app/club.py, web/club.js) is specified in backend/journal_club/DESIGN.md; the web/ HTML and JS is the single source of its UI design.

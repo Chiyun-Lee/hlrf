@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import abstract as graphical
-from . import cards, db, extract, feed, ink, llm, memory, pins, pitch, proof, quiz, review, revision, summarize, tutor
+from . import cards, club, db, extract, feed, ink, llm, memory, pins, pitch, proof, quiz, review, revision, summarize, tutor
 from .levels import DEFAULT, Level
 from .schemas import GraphicalAbstract, Ink, LearnerProfile, Note, PageSummary, Paper, PaperPins, Pitch, Proof, SummaryCards
 
@@ -225,8 +225,14 @@ def make_abstract(paper_id: int, level: Level = DEFAULT) -> GraphicalAbstract:
 
 @app.get("/papers/{paper_id}/cards")
 def get_cards(paper_id: int, level: Level = DEFAULT) -> SummaryCards:
+    """The saved deck, with `notes_changed` set when the notes have changed since it was made (decks made before
+    notes_hash existed never say so)."""
+    paper = get_paper_or_404(paper_id)
     if not (deck := db.get_cards(paper_id, level)):
         raise HTTPException(404)
+    if deck.notes_hash:
+        notes = [db.get_summary(paper_id, i, level) or PageSummary(notes=[]) for i in range(len(paper.pages))]
+        deck.notes_changed = cards.notes_hash(notes) != deck.notes_hash
     return deck
 
 
@@ -552,5 +558,17 @@ def feed_summaries(req: SummariesRequest) -> dict[str, Pitch]:
     return found
 
 
+app.include_router(club.router)  # Journal club (app/club.py): /club/cards, /club/runs
+
+class WebFiles(StaticFiles):
+    """The web/ files, sent with `Cache-Control: no-cache`: the browser revalidates them on every load (a 304 when
+    unchanged), so an edit shows on a plain reload instead of a stale cached script."""
+
+    async def get_response(self, path: str, scope) -> Response:
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 # The paper browser (../web). Mounted last so the API routes above take precedence.
-app.mount("/", StaticFiles(directory=Path(__file__).parent.parent.parent / "web", html=True), name="web")
+app.mount("/", WebFiles(directory=Path(__file__).parent.parent.parent / "web", html=True), name="web")

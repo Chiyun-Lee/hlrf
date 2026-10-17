@@ -1,0 +1,48 @@
+{
+  "id": "sc08",
+  "citekey": "oyelaran2024spikein",
+  "title": "Spike-in cell lines as an experimental ground truth for batch effect",
+  "year": 2024,
+  "date": "2024-06-15",
+  "authors": [
+    "T. Oyelaran",
+    "G. Schmidt"
+  ],
+  "abstract": "Spike-in cell lines sequenced in every batch give an experimental ground truth for batch effect that is independent of cell-type labels. Scoring against it reverses the top-two ranking from label-based benchmarks.",
+  "claims": [
+    {
+      "text": "Spike-in cell lines give a label-free ground truth for batch effect.",
+      "quote": {
+        "paper_id": "sc08",
+        "text": "Spike-in cell lines sequenced in every batch give an experimental ground truth for batch effect that is independent of cell-type labels.",
+        "loc": "p3 §2.1"
+      }
+    },
+    {
+      "text": "Spike-in scoring reverses the top-two ranking from label benchmarks.",
+      "quote": {
+        "paper_id": "sc08",
+        "text": "Scoring against the spike-in ground truth reverses the ranking of the top two methods reported by label-based benchmarks.",
+        "loc": "p5 §3.2"
+      }
+    }
+  ],
+  "methods": [
+    "spike-in cell line design",
+    "label-free batch effect scoring"
+  ],
+  "data": [
+    "newly generated six-batch dataset with three spike-in lines"
+  ],
+  "limits": [
+    {
+      "text": "Simulated batches lack a biological ground truth; spike-ins need new data.",
+      "quote": {
+        "paper_id": "sc08",
+        "text": "Simulated batches used in prior benchmarks lack a biological ground truth, and our spike-in design applies only to newly generated data.",
+        "loc": "p8 §5"
+      }
+    }
+  ],
+  "fulltext_excerpt": "We propose a design that sidesteps curated labels. Spike-in cell lines sequenced in every batch give an experimental ground truth for batch effect that is independent of cell-type labels. Because the spike-in cells are the same in every batch, any difference between them after integration is residual batch effect. Scoring against the spike-in ground truth reverses the ranking of the top two methods reported by label-based benchmarks. The previous leader over-mixed the spike-in lines with neighbouring primary cells. Simulated batches used in prior benchmarks lack a biological ground truth, and our spike-in design applies only to newly generated data. Existing public datasets cannot be rescored this way. We release the dataset and the scoring code."
+}

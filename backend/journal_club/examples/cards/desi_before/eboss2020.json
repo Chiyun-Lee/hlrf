@@ -1,0 +1,115 @@
+{
+  "id": "eboss2020",
+  "citekey": "eboss2020",
+  "title": "The Completed SDSS-IV extended Baryon Oscillation Spectroscopic Survey: Cosmological Implications from two Decades of Spectroscopic Surveys at the Apache Point observatory",
+  "year": 2020,
+  "date": "2020-07-17",
+  "authors": [
+    "Shadab Alam",
+    "Marie Aubert",
+    "Santiago Avila"
+  ],
+  "abstract": "arXiv:2007.08991. This is the capstone cosmology paper of the SDSS/BOSS/eBOSS programme. It asks how well two decades of spectroscopic clustering, on its own and alongside Planck, Pantheon supernovae and DES lensing, pin down dark energy, curvature, the Hubble constant and the growth of structure. The inputs are BAO distances (D_M/r_d and D_H/r_d) from eight samples spanning 0.07 < z < 3.5 (main galaxies, BOSS galaxies, eBOSS LRGs, ELGs, quasars and the Lyman-alpha forest) plus six RSD growth-rate measurements. The authors fit LCDM and its one-, two- and three-parameter extensions with CosmoMC, check the internal consistency of the 21 SDSS measurements with a pull-distribution test, and compare a \"Stage-II\" (WMAP/JLA/DR7) baseline to the present data. Headline numbers: in a curved LCDM model, BAO alone rule out dark-energy-free models (Omega_DE = 0) at more than 8 sigma; BAO plus Planck give Omega_k = 0.0000 +/- 0.0018; the full combination in a curved w0-wa model gives w0 = -0.909 +/- 0.081, wa = -0.49 (+0.35/-0.30), a dark energy figure of merit of 94, H0 = 68.18 +/- 0.79 km/s/Mpc, and sigma8 = 0.85 +/- 0.03 from BAO+RSD; the neutrino mass sum is below 0.115 eV. Everything stays consistent with flat LCDM and GR, which the authors say sharpens the cosmological-constant fine-tuning problem. Left open: the >4 sigma Hubble tension, which they argue cannot be blamed on Planck systematics or the LCDM assumption; the neutrino hierarchy; and whether final DES data will restore the Dark Energy Task Force FoM forecast.",
+  "claims": [
+    {
+      "text": "BAO data alone, with no CMB or supernova input, exclude dark-energy-free models at more than 8 sigma in a curved LCDM model.",
+      "quote": {
+        "paper_id": "eboss2020",
+        "text": "We show that the BAO data alone are able to rule out dark-energy-free models at more than eight standard deviations in an extension to the flat, ΛCDM model that allows for curvature.",
+        "loc": "Abstract"
+      }
+    },
+    {
+      "text": "Combined with Planck temperature and polarization data, SDSS BAO constrain the dark energy equation of state to be consistent with a cosmological constant at better than 6% precision.",
+      "quote": {
+        "paper_id": "eboss2020",
+        "text": "The SDSS BAO measurements demonstrate that the observed cosmic acceleration is best described by a dark energy equation of state that is consistent with a cosmological constant to better than 6% precision when combined with the Planck temperature and polarization data.",
+        "loc": "Sec. VII, p. 31"
+      }
+    },
+    {
+      "text": "In the full Planck+SDSS+Pantheon+DES fit the time-varying equation of state is constrained to 3% at the pivot redshift (wp = -1.020 +/- 0.029, wa = -0.32 +0.28/-0.24 in w0waCDM), and adding wa barely degrades the constant-w precision.",
+      "quote": {
+        "paper_id": "eboss2020",
+        "text": "The result demonstrates that we can constrain the dark energy equation of state to 3% precision at an earlier epoch in cosmic history.",
+        "loc": "Sec. VI.B, p. 29"
+      }
+    },
+    {
+      "text": "Every BAO-anchored route to H0 (inverse distance ladder in ow0waCDM, or BAO+BBN without CMB anisotropies) gives H0 below 68 km/s/Mpc with roughly 1 km/s/Mpc precision, more than 4 sigma below the Cepheid and time-delay value of 73.7 +/- 1.1.",
+      "quote": {
+        "paper_id": "eboss2020",
+        "text": "In all cases, the central values remain below H0 = 68 km s−1Mpc−1, and the uncertainties remain at 1 km s−1Mpc−1 or better.",
+        "loc": "Sec. IV.B, p. 22"
+      }
+    },
+    {
+      "text": "The combined BAO+RSD data give sigma8 = 0.85 +/- 0.03, a growth amplitude consistent with Planck and General Relativity, and about 2 sigma above the sigma8 = 0.75 +0.045/-0.047 that the KiDS analysis [188] obtained from the BOSS DR12 clustering data alone.",
+      "quote": {
+        "paper_id": "eboss2020",
+        "text": "The combined BAO and RSD measurements indicate σ8 = 0.85 ± 0.03, implying a growth rate that is consistent with predictions from Planck temperature and polarization data and with General Relativity.",
+        "loc": "Abstract"
+      }
+    },
+    {
+      "text": "A pull-distribution test of the SDSS BAO and RSD measurements against the best-fit LCDM model finds them consistent with a normal distribution (KS p-values 0.98 for BAO, 0.56 for RSD, 0.71 for BAO+RSD); the largest individual pulls are -1.75 (BAO, z ~ 0.7 eBOSS LRG) and 1.91 (RSD, z ~ 1.48 eBOSS quasar), and the largest deviation in the combined set is the z ~ 1.48 eBOSS quasar sample, whose joint BAO+RSD measurement differs from LCDM by 3.0 sigma once the BAO-RSD covariance is included.",
+      "quote": {
+        "paper_id": "eboss2020",
+        "text": "After accounting for the covariance between BAO and RSD measurements, the measurement differs from the ΛCDM prediction by 3.0 standard deviations.",
+        "loc": "Sec. VI.A, p. 26"
+      }
+    }
+  ],
+  "methods": [
+    "BAO-only likelihoods (D_M/r_d, D_H/r_d or D_V/r_d) for eight SDSS samples, and full-shape BAO+RSD likelihoods (adding f sigma8) for six, built as consensus results of correlation-function and power-spectrum analyses with systematic errors folded into the covariances.",
+    "MCMC fits with CosmoMC (and MGCAMB for growth tests) to LCDM and its extensions: oLCDM, wCDM, nuLCDM, owCDM, w0waCDM, ow0waCDM, nuwCDM; results tabulated as marginalized 68% limits (Tables IV-VII), with Table VIII giving 95% upper limits on the neutrino mass sum plus the integrated hierarchy probabilities P_inv/P_norm and P_unphy.",
+    "Two H0 analyses designed to bypass CMB assumptions: an inverse distance ladder in ow0waCDM (CMB calibrates r_d, BAO calibrate SNe Ia) and a BAO+BBN fit with a deuterium-based omega_b prior that uses no CMB anisotropy data.",
+    "Internal consistency checked by computing pulls of each SDSS measurement against the best-fit LCDM model, diagonalizing covariances, and applying a KS test against a unit Gaussian.",
+    "A decade-of-progress comparison using a five-parameter figure of merit FoM = |Cov|^(-1/2N) for Stage-II (WMAP, JLA, SDSS DR7), Stage-II+SDSS and Stage-III data sets."
+  ],
+  "data": [
+    "SDSS BAO: MGS (z_eff = 0.15), BOSS DR12 galaxies (0.2 < z < 0.6), eBOSS LRGs (incl. BOSS z > 0.6), ELGs, quasars (z ~ 1.48), and Lyman-alpha forest auto- and cross-correlations (z > 2.1); SDSS RSD: f sigma8 at six effective redshifts.",
+    "Planck 2018 TT, TE, EE and lowE spectra, with Planck lensing added in the global fits.",
+    "Pantheon Type Ia supernovae; DES Year 1 3x2pt (cosmic shear, galaxy clustering, galaxy-galaxy lensing).",
+    "BBN prior from the primordial deuterium abundance D/H = (2.527 +/- 0.030) x 10^-5, giving omega_b = 0.02235 +/- 0.00037 for the CMB-independent H0 fit.",
+    "Whether the >4 sigma H0 discrepancy is resolved by new pre-recombination physics that lowers r_d, given that the paper rules out Planck systematics and the LCDM assumption as the sole cause (Sec. IV.B).",
+    "Whether the final DES SNe, cluster and weak-lensing results will deliver the additional ~60% in dark energy FoM needed to match the Dark Energy Task Force forecast (Sec. VII).",
+    "Whether RSD, rather than BAO degeneracy-breaking, will become the dominant cosmological probe of the neutrino mass sum and resolve the mass hierarchy with next-decade data (Sec. VI.C).",
+    "How DESI's ~50 million galaxies and quasars over 0 < z < 3.5, using the multi-tracer, Lyman-alpha and void techniques developed in eBOSS, will tighten these constraints (Sec. VII.B)."
+  ],
+  "limits": [
+    {
+      "text": "The low-redshift sound-horizon analysis that combines BAO, SNe and the local distance ladder ignores the correlation between the Pantheon SNe and the Riess et al. H0 calibration.",
+      "quote": {
+        "paper_id": "eboss2020",
+        "text": "However, we caution that we did not take the correlation between the SN data and the local H0 measurement into account for our analysis.",
+        "loc": "Sec. IV.B, p. 22"
+      }
+    },
+    {
+      "text": "The paper's H0 values, like the CMB's, rest on standard pre-recombination physics setting r_d, and the authors note that attempts to reconcile the Hubble tension by modifying r_d have had limited success.",
+      "quote": {
+        "paper_id": "eboss2020",
+        "text": "As summarized in Knox and Millea [176], there have been many attempts to reconcile the H0 tension by modifying the value of rd, with limited success.",
+        "loc": "Sec. IV.B, p. 22"
+      }
+    },
+    {
+      "text": "The consistency with LCDM does not exclude dark energy or modified gravity models that have parameter choices mimicking a cosmological constant.",
+      "quote": {
+        "paper_id": "eboss2020",
+        "text": "However, since many of these models have parameter choices that make them indistinguishable from ΛCDM, those models all can be made consistent with our observations.",
+        "loc": "Sec. VII, p. 32"
+      }
+    },
+    {
+      "text": "The quoted neutrino-hierarchy probabilities are integrated posteriors, not Bayesian evidences, and are inconclusive.",
+      "quote": {
+        "paper_id": "eboss2020",
+        "text": "Note that these are not Bayesian evidences, because we do not account for the prior volume.",
+        "loc": "Sec. VI.C, p. 30"
+      }
+    }
+  ],
+  "fulltext_excerpt": "---\nid: 2007.08991\ncitekey: eboss2020\ntitle: The Completed SDSS-IV extended Baryon Oscillation Spectroscopic Survey: Cosmological Implications from two Decades of Spectroscopic Surveys at the Apache Point observatory\nyear: 2020\ndate: 2020-07-17\nauthors: [Shadab Alam, Marie Aubert, Santiago Avila]\narxiv: 2007.08991\nrole: before\n---\n\n# Executive summary\nThis is the capstone cosmology paper of the SDSS/BOSS/eBOSS programme. It asks how well two decades of spectroscopic clustering, on its own and alongside Planck, Pantheon supernovae and DES lensing, pin down dark energy, curvature, the Hubble constant and the growth of structure. The inputs are BAO distances (D_M/r_d and D_H/r_d) from eight samples spanning 0.07 < z < 3.5 (main galaxies, BOSS galaxies, eBOSS LRGs, ELGs, quasars and the Lyman-alpha forest) plus six RSD growth-rate measurements. The authors fit LCDM and its one-, two- and three-parameter extensions with CosmoMC, check the internal consistency of the 21 SDSS measurements with a pull-distribution test, and compare a \"Stage-II\" (WMAP/JLA/DR7) baseline to the present data. Headline numbers: in a curved LCDM model, BAO alone rule out dark-energy-free models (Omega_DE = 0) at more than 8 sigma; BAO plus Planck give Omega_k = 0.0000 +/- 0.0018; the full combination in a curved w0-wa model gives w0 = -0.909 +/- 0.081, wa = -0.49 (+0.35/-0.30), a dark energy figure of merit of 94, H0 = 68.18 +/- 0.79 km/s/Mpc, and sigma8 = 0.85 +/- 0.03 from BAO+RSD; the neutrino mass sum is below 0.115 eV. Everything stays consistent with flat LCDM and GR, which the authors say sharpens the cosmological-constant fine-tuning problem. Left open: the >4 sigma Hubble tension, which they argue cannot be blamed on Planck systematics or the LCDM assumption; the neutrino hierarchy; and whether final DES data will restore the Dark Energy Task Force FoM forecast.\n\n## Claims\n- claim: BAO data alone, with no CMB or supernova input, exclude dark-energy-free models at more than 8 sigma in a curved LCDM model.\n  quote: \"We show that the BAO data alone are able to rule out dark-energy-free models at more than eight standard deviations in an extension to the flat, ΛCDM model that allows for curvature.\"\n  loc: \"Abstract\"\n- claim: Combined with Planck temperature and polarization data, SDSS BAO constrain the dark energy equation of state to be consistent with a cosmological constant at better than 6% precision.\n  quote: \"The SDSS BAO measurements demonstrate that the observed cosmic acceleration is best described by a dark energy equation of state that is consistent with a cosmological constant to better than 6% precision when combined with the Planck temperature and polarization data.\"\n  loc: \"Sec. VII, p. 31\"\n- claim: In the full Planck+SDSS+Pantheon+DES fit the time-varying equation of state is constrained to 3% at the pivot redshift (wp = -1.020 +/- 0.029, wa = -0.32 +0.28/-0.24 in w0waCDM), and adding wa barely degrades the constant-w precision.\n  quote: \"The result demonstrates that we can constrain the dark energy equation of state to 3% precision at an earlier epoch in cosmic history.\"\n  loc: \"Sec. VI.B, p. 29\"\n- claim: Every BAO-anchored route to H0 (inverse distance ladder in ow0waCDM, or BAO+BBN without CMB anisotropies) gives H0 below 68 km/s/Mpc with roughly 1 km/s/Mpc precision, more than 4 sigma below the Cepheid and time-delay value of 73.7 +/- 1.1.\n  quote: \"In all cases, the central values remain below H0 = 68 km s−1Mpc−1, and the uncertainties remain at 1 km s−1Mpc−1 or better.\"\n  loc: \"Sec. IV.B, p. 22\"\n- claim: The combined BAO+RSD data give sigma8 = 0.85 +/- 0.03, a growth amplitude consistent with Planck and General Relativity, and about 2 sigma above the sigma8 = 0.75 +0.045/-0.047 that the KiDS analysis [188] obtained from the BOSS DR12 clustering data alone.\n  quote: \"The combined BAO and RSD measurements indicate σ8 = 0.85 ± 0.03, implying a growth rate that is consistent with predictions from Planck temperature and polarization data and with General Relativity.\"\n  loc: \"Abstract\"\n- claim: A pull-distribution test of the SDSS BAO and RSD measurements against the best-fit LCDM model finds them consistent with a normal distribution (KS p-values 0.98 for BAO, 0.56 for RSD, 0.71 for BAO+RSD); the largest individual pulls are -1.75 (BAO, z ~ 0.7 eBOSS LRG) and 1.91 (RSD, z ~ 1.48 eBOSS quasar), and the largest deviation in the combined set is the z ~ 1.48 eBOSS quasar sample, whose joint BAO+RSD measurement differs from LCDM by 3.0 sigma once the BAO-RSD covariance is included.\n  quote: \"After accounting for the covariance between BAO and RSD measurements, the measurement differs from the ΛCDM prediction by 3.0 standard deviations.\"\n  loc: \"Sec. VI.A, p. 26\"\n\n## Methods\n- BAO-only likelihoods (D_M/r_d, D_H/r_d or D_V/r_d) for eight SDSS samples, and full-shape BAO+RSD likelihoods (adding f sigma8) for six, built as consensus results of correlation-function and power-spectrum analyses with systematic errors folded into the covariances.\n- MCMC fits with CosmoMC (and MGCAMB for growth tests) to LCDM and its extensions: oLCDM, wCDM, nuLCDM, owCDM, w0waCDM, ow0waCDM, nuwCDM; results tabulated as marginalized 68% limits (Tables IV-VII), with Table VIII giving 95% upper limits on the neutrino mass sum plus the integrated hierarchy probabilities P_inv/P_norm and P_unphy.\n- Two H0 analyses designed to bypass CMB assumptions: an inverse distance ladder in ow0waCDM (CMB calibrates r_d, BAO calibrate SNe Ia) and a BAO+BBN fit with a deuterium-based omega_b prior that uses no CMB anisotropy data.\n- Internal consistency checked by computing pulls of each SDSS measurement against the best-fit LCDM model, diagonalizing covariances, and applying a KS test against a unit Gaussian.\n- A decade-of-progress comparison using a five-parameter figure of merit FoM = |Cov|^(-1/2N) for Stage-II (WMAP, JLA, SDSS DR7), Stage-II+SDSS and Stage-III data sets.\n\n## Data\n- SDSS BAO: MGS (z_eff = 0.15), BOSS DR12 galaxies (0.2 < z < 0.6), eBOSS LRGs (incl. BOSS z > 0.6), ELGs, quasars (z ~ 1.48), and Lyman-alpha forest auto- and cross-correlations (z > 2.1); SDSS RSD: f sigma8 at six effective redshifts.\n- Planck 2018 TT, TE, EE and lowE spectra, with Planck lensing added in the global fits.\n- Pantheon Type Ia supernovae; DES Year 1 3x2pt (cosmic shear, galaxy clustering, galaxy-galaxy lensing).\n- BBN prior from the primordial deuterium abundance D/H = (2.527 +/- 0.030) x 10^-5, giving omega_b = 0.02235 +/- 0.00037 for the CMB-independent H0 fit.\n\n## Limitations\n- limit: The low-redshift sound-horizon analysis that combines BAO, SNe and the local distance ladder ignores the correlation between the Pantheon SNe and the Riess et al. H0 calibration.\n  quote: \"However, we caution that we did not take the correlation between the SN data and the local H0 measurement into account for our analysis.\"\n  loc: \"Sec. IV.B, p. 22\"\n- limit: The paper's H0 values, like the CMB's, rest on standard pre-recombination physics setting r_d, and the authors note that attempts to reconcile the Hubble tension by modifying r_d have had limited success.\n  quote: \"As summarized in Knox and Millea [176], there have been many attempts to reconcile the H0 tension by modifying the value of rd, with limited success.\"\n  loc: \"Sec. IV.B, p. 22\"\n- limit: The consistency with LCDM does not exclude dark energy or modified gravity models that have parameter choices mimicking a cosmological constant.\n  quote: \"However, since many of these models have parameter choices that make them indistinguishable from ΛCDM, those models all can be made consistent with our observations.\"\n  loc: \"Sec. VII, p. 32\"\n- limit: The quoted neutrino-hierarchy probabilities are integrated posteriors, not Bayesian evidences, and are inconclusive.\n  quote: \"Note that these are not Bayesian evidences, because we do not account for the prior volume.\"\n  loc: \"Sec. VI.C, p. 30\"\n\n## Open questions\n- Whether the >4 sigma H0 discrepancy is resolved by new pre-recom"
+}
