@@ -2,7 +2,8 @@
 
 Papers come straight from the arXiv API (app/arxiv.py), at most once an hour; the ranking is app/ranker.py. It learns
 from your own papers ("Your papers" in the tab: arXiv ids, or an INSPIRE profile, app/profiles.py, re-checked
-daily), More like this / Not for me, the papers you open, and every library paper that's on arXiv.
+daily), your Zotero library (a linked BibTeX export, app/zotero.py), More like this / Not for me, the papers you
+open, and every library paper that's on arXiv.
 Set FEED_CATEGORIES in backend/.env to follow other categories (default astro-ph.CO).
 """
 
@@ -13,10 +14,11 @@ import re
 import threading
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 import httpx
 
-from . import arxiv, db, profiles, ranker
+from . import arxiv, db, profiles, ranker, zotero
 from .schemas import ArxivPaper
 
 log = logging.getLogger(__name__)
@@ -24,18 +26,13 @@ log = logging.getLogger(__name__)
 CATEGORIES = os.environ.get("FEED_CATEGORIES", "astro-ph.CO").split()
 REFRESH_EVERY = timedelta(hours=1)
 PROFILE_SYNC_EVERY = timedelta(days=1)  # how often linked profiles are checked for new papers
-FIRST_DAYS, DAYS = 7, 3  # days of papers to fetch the first time (so there's something to learn from), then each refresh
+# Days of papers to fetch the first time, then on each refresh. The first fetch also gives the ranking its "not liked"
+# examples, which have to outnumber a big linked library, so it reaches back a month.
+FIRST_DAYS, DAYS = 30, 3
 DAILY_GOAL = 5  # papers to sort from a listing day for it to count toward the streak; all of them, if fewer
 PROFILE_PAPERS = 12  # of your own and of your liked papers, as context for the summaries
 
-# New-style (2410.01234) and old-style (hep-th/0101001) arXiv identifiers, without the version. Old-style ids need a
-# real archive name, so that other links' paths (inspirehep.net/authors/1960608) aren't read as ids.
-OLD_ARCHIVES = (
-    "acc-phys|adap-org|alg-geom|ao-sci|astro-ph|atom-ph|bayes-an|chao-dyn|chem-ph|cmp-lg|comp-gas|cond-mat|cs|dg-ga|"
-    "funct-an|gr-qc|hep-ex|hep-lat|hep-ph|hep-th|math|math-ph|mtrl-th|nlin|nucl-ex|nucl-th|patt-sol|physics|plasm-ph|"
-    "q-alg|q-bio|quant-ph|solv-int|supr-con"
-)
-ARXIV_ID = rf"\d{{4}}\.\d{{4,5}}|(?:{OLD_ARCHIVES})(?:\.[A-Z]{{2}})?/\d{{7}}"
+ARXIV_ID = arxiv.ID
 ARXIV_URL = re.compile(rf"arxiv\.org/(?:abs|pdf|html)/({ARXIV_ID})(?:v\d+)?", re.I)
 ARXIV_CLAIM = re.compile(rf"^(?:arxiv:)?\s*({ARXIV_ID})(?:v\d+)?$", re.I)
 
@@ -74,9 +71,10 @@ def daily(day: date | None = None) -> dict:
     notice = refresh()
     if due_profiles() and not sync_lock.locked():
         threading.Thread(target=sync_profiles, daemon=True).start()  # new papers show up on the next load
+    zotero_link = sync_zotero()
     s = State.load()
     try:
-        if s.fetch_missing(s.library.keys() | set(s.kinds["mine"])):
+        if s.fetch_missing(s.library.keys() | set(s.kinds["mine"]) | set(s.kinds["zotero"])):
             s = State.load()
     except httpx.HTTPError as e:  # they'll be fetched next time; rank with what we have
         log.info("couldn't fetch library papers from arXiv: %r", e)
@@ -84,7 +82,7 @@ def daily(day: date | None = None) -> dict:
     day = day or (days[0] if days else None)
     listing = [p for p in s.listed if p.listing_date == day]
 
-    model = s.model()
+    model = s.model(day)
     if model:
         scores = model.score(listing)
         order = sorted(range(len(listing)), key=lambda i: -scores[i])
@@ -104,6 +102,7 @@ def daily(day: date | None = None) -> dict:
         "progress": s.progress(day),
         "mine": [{"id": p.id, "title": p.title} for p in s.papers_for(s.kinds["mine"])],
         "profiles": [{"url": p["url"], "label": profiles.label(p)} for p in linked()],
+        "zotero": zotero_link,
         "papers": [
             paper_json(p, rank=i, score=score, reasons=why, feedback=s.thumb(p.id), library_id=s.library.get(p.id))
             for i, ((p, score), why) in enumerate(zip(ranked, reasons), start=1)
@@ -116,8 +115,14 @@ def profile() -> dict:
     s = State.load()
     mine = s.papers_for(s.kinds["mine"])[:PROFILE_PAPERS]
     liked = [p for p in s.papers_for(s.kinds["up"]) if p.id not in s.kinds["mine"]][:PROFILE_PAPERS]
+    reading = sorted(s.papers_for(s.kinds["zotero"]), key=lambda p: p.published, reverse=True)[:PROFILE_PAPERS]
     brief = lambda p: {"id": p.id, "title": p.title, "abstract": p.abstract}  # noqa: E731
-    return {"categories": CATEGORIES, "mine": [brief(p) for p in mine], "liked": [brief(p) for p in liked]}
+    return {
+        "categories": CATEGORIES,
+        "mine": [brief(p) for p in mine],
+        "liked": [brief(p) for p in liked],
+        "zotero": [brief(p) for p in reading],
+    }
 
 
 # --- writing ---
@@ -195,6 +200,50 @@ def remove_mine(paper_id: str) -> None:
     db.set_meta("mine_removed", json.dumps(sorted(removed)))
 
 
+# --- a linked Zotero export ---
+
+
+def link_zotero(path: str) -> dict:
+    """Read your Zotero BibTeX export now and whenever it changes; its arXiv papers count as ones you're interested in."""
+    file = Path(path.strip().strip("'\"")).expanduser()
+    if file.suffix.lower() != ".bib" or not file.is_file():
+        raise FeedError("bad_request", f"No .bib file at {file}. In Zotero: File > Export Library..., format BibTeX.")
+    db.set_meta("zotero", json.dumps({"path": str(file)}))
+    link = sync_zotero()
+    try:
+        State.load().fetch_missing(db_ids("zotero"))  # so the ranking can read them straight away
+    except httpx.HTTPError as e:
+        log.info("couldn't fetch Zotero papers from arXiv yet: %r", e)  # the next page load tries again
+    return link
+
+
+def unlink_zotero() -> None:
+    db.set_meta("zotero", "")
+    db.replace_signals("zotero", [])
+
+
+def sync_zotero() -> dict | None:
+    """Re-read the linked export if it changed. Returns {path, entries, on_arxiv, missing?}, or None if none is linked."""
+    link = json.loads(db.get_meta("zotero") or "null")
+    if not link:
+        return None
+    file = Path(link["path"])
+    try:
+        mtime = file.stat().st_mtime
+        if mtime != link.get("mtime"):
+            ids, entries = zotero.read(file)
+            db.replace_signals("zotero", ids)
+            link = {"path": link["path"], "mtime": mtime, "entries": entries, "on_arxiv": len(ids)}
+            db.set_meta("zotero", json.dumps(link))
+    except (OSError, ValueError) as e:
+        return {**link, "missing": str(e)}  # keep the papers read last time
+    return link
+
+
+def db_ids(kind: str) -> list[str]:
+    return [i for i, k in db.signals() if k == kind]
+
+
 # --- linked profiles ---
 
 
@@ -238,7 +287,8 @@ def refresh() -> str | None:
     """
     with refresh_lock:
         last, cats = db.get_meta("fetched_at"), db.get_meta("categories")
-        first = last is None or cats != " ".join(CATEGORIES)
+        # A first fetch, new categories, or a history from when FIRST_DAYS was shorter: go back FIRST_DAYS.
+        first = last is None or cats != " ".join(CATEGORIES) or db.get_meta("history_days") != str(FIRST_DAYS)
         if not first and datetime.now(timezone.utc) - datetime.fromisoformat(last) < REFRESH_EVERY:
             return None
         try:
@@ -251,6 +301,8 @@ def refresh() -> str | None:
         db.save_arxiv(papers, listed=True)
         db.set_meta("fetched_at", datetime.now(timezone.utc).isoformat())
         db.set_meta("categories", " ".join(CATEGORIES))
+        if first:
+            db.set_meta("history_days", str(FIRST_DAYS))
     return None
 
 
@@ -262,7 +314,7 @@ class State:
 
     def __init__(self, stored: dict[str, tuple[ArxivPaper, bool]], signals: list[tuple[str, str]], library: dict[str, int]):
         self.stored = stored
-        self.kinds = {k: [i for i, kind in signals if kind == k] for k in ("up", "down", "click", "mine")}  # newest first
+        self.kinds = {k: [i for i, kind in signals if kind == k] for k in ("up", "down", "click", "mine", "zotero")}  # newest first
         self.library = library  # arXiv id -> library paper id
         # Papers in a day's feed: from a daily listing, in your categories.
         self.listed = [p for p, listed in stored.values() if listed and set(p.categories) & set(CATEGORIES)]
@@ -282,10 +334,12 @@ class State:
         return next((k for k in ("up", "down") if paper_id in self.kinds[k]), None)
 
     def positives(self) -> set[str]:
-        liked = {*self.kinds["up"], *self.kinds["click"], *self.kinds["mine"], *self.library}
+        liked = {*self.kinds["up"], *self.kinds["click"], *self.kinds["mine"], *self.kinds["zotero"], *self.library}
         return liked - set(self.kinds["down"])
 
-    def model(self) -> ranker.Model | None:
+    def model(self, day: date | None) -> ranker.Model | None:
+        """Your model for ranking `day`. Its random "not liked" examples come from other days only: a paper being
+        ranked must not also be a training example, or the model just learns it back."""
         global corpus
         everything = [p for p, _ in self.stored.values()]
         if not everything:
@@ -294,7 +348,7 @@ class State:
             corpus = ranker.Corpus(everything)
         positives = self.papers_for(sorted(self.positives()))
         negatives = self.papers_for(self.kinds["down"])
-        return ranker.train(corpus, self.listed, positives, negatives)
+        return ranker.train(corpus, [p for p in self.listed if p.listing_date != day], positives, negatives)
 
     def learning(self) -> dict:
         """How close you are to a personal ranking."""

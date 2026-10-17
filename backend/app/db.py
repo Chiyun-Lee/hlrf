@@ -128,7 +128,7 @@ def all_arxiv() -> list[tuple[ArxivPaper, bool]]:
 
 
 def signals() -> list[tuple[str, str]]:
-    """(arxiv_id, kind) for every signal, newest first. kind: up, down, click or mine (your own paper)."""
+    """(arxiv_id, kind) for every signal, newest first. kind: up, down, click, mine (your own paper) or zotero."""
     with lock:
         return conn.execute("SELECT arxiv_id, kind FROM feed_signals ORDER BY at DESC").fetchall()
 
@@ -136,6 +136,14 @@ def signals() -> list[tuple[str, str]]:
 def set_signal(arxiv_id: str, kind: str) -> None:
     with lock, conn:
         conn.execute("INSERT OR IGNORE INTO feed_signals VALUES (?, ?, ?)", (arxiv_id, kind, datetime.now(timezone.utc).isoformat()))
+
+
+def replace_signals(kind: str, arxiv_ids: list[str]) -> None:
+    """Make `arxiv_ids` the whole set of signals of this kind (e.g. what a linked Zotero export contains)."""
+    now = datetime.now(timezone.utc).isoformat()
+    with lock, conn:
+        conn.execute("DELETE FROM feed_signals WHERE kind = ?", (kind,))
+        conn.executemany("INSERT INTO feed_signals VALUES (?, ?, ?)", [(i, kind, now) for i in dict.fromkeys(arxiv_ids)])
 
 
 def clear_signal(arxiv_id: str, kind: str) -> None:

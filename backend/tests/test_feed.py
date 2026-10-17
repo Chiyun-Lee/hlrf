@@ -227,3 +227,17 @@ def test_daily_sync_adds_new_papers_but_not_removed_ones(fresh, monkeypatch):
 
     client.delete(f"/feed/profiles?url={INSPIRE_URL}")
     assert feed.linked() == [] and len(client.get("/feed").json()["mine"]) == 2  # papers stay
+
+
+def test_the_day_being_ranked_is_never_a_training_example(fresh, monkeypatch):
+    client.post("/feed/mine", json={"text": "2207.01500 2207.01501 2207.01502"})
+    seen = {}
+    real_train = feed.ranker.train
+
+    def train(corpus, pool, positives, negatives):
+        seen["pool_days"] = {p.listing_date for p in pool}
+        return real_train(corpus, pool, positives, negatives)
+
+    monkeypatch.setattr(feed.ranker, "train", train)
+    client.get("/feed?day=2026-10-16")
+    assert FRIDAY not in seen["pool_days"] and THURSDAY in seen["pool_days"]
