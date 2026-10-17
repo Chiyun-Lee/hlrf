@@ -28,3 +28,17 @@ def test_web_files_are_revalidated_on_every_load():
         res = client.get(path)
         assert res.status_code == 200
         assert res.headers["cache-control"] == "no-cache"
+
+
+# The handwriting is for what's drawn on the paper (doodle notes, figure scribbles, whiteboard text); the interface
+# around it uses the plain sans (web/style.css). New views get .title headings and the shared tokens instead.
+PAPER_HANDWRITING = {".note", ".marks text, .abstract-slide .mark-text", ".ink-text"}
+
+
+def test_handwriting_only_on_the_paper():
+    css = (WEB / "style.css").read_text()
+    rules = re.findall(r"([^{}]+)\{([^{}]*)\}", re.sub(r"/\*.*?\*/", "", css, flags=re.S))
+    uses = {selector.strip() for selector, body in rules if "var(--hand)" in body}
+    assert uses == PAPER_HANDWRITING
+    scripts = {s.name for s in WEB.glob("*.js") if re.search(r'class="(?:[^"]* )?hand(?: [^"]*)?"', s.read_text())}
+    assert scripts == set()

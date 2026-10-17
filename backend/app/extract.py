@@ -24,7 +24,7 @@ HEADER_HINTS = re.compile(r"author contributions|contributed equally|equal contr
 HTML_BLOCKS_PER_PAGE = 12  # HTML has no pages; chunk it so the viewer can load summaries page by page
 
 log = logging.getLogger(__name__)
-http = httpx.Client(follow_redirects=True, timeout=30, headers={"User-Agent": "human-pretraining/0.1"})
+http = httpx.Client(follow_redirects=True, timeout=30, headers={"User-Agent": "hlrf/0.1"})
 
 SYSTEM = """You read the opening pages (and any author-contribution sections) of a research paper and return its
 bibliographic header.

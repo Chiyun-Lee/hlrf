@@ -19,7 +19,7 @@ SUBJECTS = [
     "Zoology",
 ]  # fmt: skip
 WORKERS = 4  # pages fetched at once: the API serves 30 records a page, about a second each
-http = httpx.Client(timeout=60, follow_redirects=True, headers={"User-Agent": "human-pretraining/0.1 (For you tab)"})
+http = httpx.Client(timeout=60, follow_redirects=True, headers={"User-Agent": "hlrf/0.1 (For you tab)"})
 
 
 def listing_date(posted: date) -> date:

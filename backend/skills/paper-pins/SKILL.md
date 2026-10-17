@@ -1,6 +1,6 @@
 ---
 name: paper-pins
-description: Turn a paper review (a paper2agent run, re-run notebooks, tests through the paper's MCP tools, a reviewer's notes or review.md) into Human Pretraining's methods pins, the buttons on a paper's figures and tables saying where the data come from and what the review found. Use when asked to write, fix or check pins.json for a paper, or when a review job hands you paper.pdf and targets.json.
+description: Turn a paper review (a paper2agent run, re-run notebooks, tests through the paper's MCP tools, a reviewer's notes or review.md) into HLRF's methods pins, the buttons on a paper's figures and tables saying where the data come from and what the review found. Use when asked to write, fix or check pins.json for a paper, or when a review job hands you paper.pdf and targets.json.
 ---
 
 # Paper pins

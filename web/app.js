@@ -32,7 +32,7 @@ const atLevel = (path) => `${path}?level=${level}`;
 
 const routes = [
   [/^#?\/?$/, library],
-  [/^#\/papers\/(\d+)$/, paper],
+  [/^#\/papers\/(\d+)(?:\/(whiteboard))?$/, paper], // the reader with notes, or the paper as a whiteboard to write on
   [/^#\/for-you(?:\/(\d{4}-\d{2}-\d{2}))?$/, forYou],
   [/^#\/revision$/, revisionPage],
   [/^#\/me$/, me],
@@ -62,7 +62,7 @@ route();
 
 async function library() {
   const papers = await api("/papers");
-  app.innerHTML = `<h1 class="hand">Your papers</h1>${addPaperForm()}
+  app.innerHTML = `<h1 class="title">Your papers</h1>${addPaperForm()}
     ${papers.length ? `<div class="library-tools">
       <input type="search" placeholder="Filter by title or author" id="q" />
       <button class="btn reviewed-filter" id="reviewed" aria-pressed="false"></button>
@@ -88,6 +88,10 @@ async function library() {
         (p) => `<div class="paper-card">
           <a href="#/papers/${p.id}"><h2>${esc(p.title)}</h2></a>
           <div class="muted small">${esc(shortAuthors(p.authors))}${p.year ? ` · ${p.year}` : ""}${p.venue ? ` · ${esc(p.venue)}` : ""} · ${p.n_pages} pages${reviewBadge(reviews[p.id], reviewed(p))}</div>
+          <div class="paper-actions">
+            <a class="btn primary" href="#/papers/${p.id}" title="Read it with doodle notes, then make a graphical abstract and take a quiz">Learn</a>
+            <a class="btn" href="#/papers/${p.id}/whiteboard" title="The paper as printed: write and draw on it, then Ask ✦ about what you wrote">✎ Whiteboard</a>
+          </div>
           <button class="btn quiet delete" data-id="${p.id}">Delete</button>
         </div>`,
       )
@@ -172,7 +176,9 @@ function toBase64(file) {
   });
 }
 
-async function paper(id) {
+// `mode` "whiteboard": the paper as printed with ✎ Write on (ink.js), to learn it by writing on it and asking.
+async function paper(id, mode) {
+  const whiteboard = mode === "whiteboard";
   preloadReader(id); // pdf.js, the PDF and the handwriting font load while the paper's details do
   const p = await api(`/papers/${id}`);
   const groups = [...new Set(p.authors.map((a) => a.equal_contribution_group).filter((g) => g != null))];
@@ -203,6 +209,9 @@ async function paper(id) {
         <button class="btn primary" id="quiz">Quiz me ✦</button>
         ${p.feed_id ? `<button class="btn" id="mine" title="Add to the papers For you ranks each day's arXiv listing by (For you → Your papers)"></button>` : ""}
         <button class="btn review-button" id="review">Run paper2agent review</button>
+        ${whiteboard
+          ? `<a class="btn" href="#/papers/${id}" title="Read it with doodle notes">Learn with notes</a>`
+          : `<a class="btn" href="#/papers/${id}/whiteboard" title="The paper as printed, to write and draw on">✎ Whiteboard</a>`}
         <button class="btn quiet" id="delete">Delete</button>
       </div>
     </section>
@@ -221,7 +230,7 @@ async function paper(id) {
     showNotes(on);
     remember("originals", !on);
   });
-  if (recall("originals")) showNotes(false);
+  if (whiteboard || recall("originals")) showNotes(false); // a whiteboard starts from the paper as printed
   const abstractButton = app.querySelector("#abstract");
   const quizButton = app.querySelector("#quiz");
   const hasAbstract = () => p.abstract_levels.includes(level); // abstracts are made per reading level
@@ -257,6 +266,7 @@ async function paper(id) {
   });
   setupReview(app.querySelector("#review"), doc, id, p); // paper2agent review in the background (review.js)
   await renderReader(doc, id, p);
+  if (whiteboard) startWriting();
 }
 
 // "+ Rank For you by this" on a paper's page: adds it to (or removes it from) For you's "Your papers", the papers
@@ -296,13 +306,13 @@ async function me() {
   const quizzes = events.filter((e) => e.kind === "quiz" || e.kind === "revision");
   const byPaper = Object.groupBy(questions, (e) => e.paper ?? "(deleted paper)");
   app.innerHTML = `
-    <h1 class="hand">My learning</h1>
+    <h1 class="title">My learning</h1>
     <p class="muted">What the tutor has picked up from your questions and quizzes. It uses this to pitch notes, answers and
       quizzes at you. Remove anything that's wrong, or add your own.</p>
     <section class="facts">${Object.entries(FACT_KINDS)
       .map(([kind, label]) => {
         const facts = profile.facts.map((f, i) => ({ ...f, i })).filter((f) => f.kind === kind);
-        return `<div class="fact-group"><h3 class="hand">${label}</h3>${
+        return `<div class="fact-group"><h3 class="title">${label}</h3>${
           facts.map((f) => `<div class="fact">${esc(f.text)}<button class="x" data-i="${f.i}" title="Forget this">×</button></div>`).join("") ||
           `<div class="muted small">Nothing yet.</div>`
         }</div>`;
@@ -314,14 +324,14 @@ async function me() {
       <button class="btn primary">Add</button>
     </form>
 
-    <h2 class="hand">Your questions</h2>
+    <h2 class="title">Your questions</h2>
     ${Object.entries(byPaper)
       .map(([title, qs]) => `<div class="history-paper"><h3>${qs[0].paper_id && qs[0].paper ? `<a href="#/papers/${qs[0].paper_id}">${esc(title)}</a>` : esc(title)}</h3>${qs
         .map((e) => `<details class="history-q"><summary><q>${esc(e.data.selection.slice(0, 120))}</q> ${esc(e.data.question)}</summary><p>${esc(e.data.answer)}</p></details>`)
         .join("")}</div>`)
       .join("") || `<p class="muted">Highlight anything in a paper and click Ask to start.</p>`}
 
-    <h2 class="hand">Quizzes</h2>
+    <h2 class="title">Quizzes</h2>
     ${quizzes.map((e) => `<div class="history-quiz"><b>${e.data.right_first_time}/${e.data.total}</b> first time · ${esc(e.kind === "revision" ? "Revision, across papers" : e.paper ?? "(deleted paper)")} <span class="muted small">${esc(e.created.slice(0, 16))}</span>${e.data.missed.length ? `<div class="muted small">Missed: ${e.data.missed.map((m) => esc(m.prompt)).join(" · ")}</div>` : ""}</div>`).join("") || `<p class="muted">No quizzes yet: make a graphical abstract, then Quiz me.</p>`}
 
     <p class="forget"><button class="btn" id="forget">Forget everything</button></p>`;

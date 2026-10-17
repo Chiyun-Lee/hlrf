@@ -10,7 +10,7 @@ async function revisionPage() {
   const total = r.papers.reduce((n, p) => n + p.questions, 0);
   const today = r.week.at(-1).day;
   app.innerHTML = `
-    <h1 class="hand">Revision</h1>
+    <h1 class="title">Revision</h1>
     <section class="rv-today">
       <div class="rv-streak ${r.streak ? "" : "none"}">${FLAME}<b>${r.streak}</b> day streak</div>
       <div class="rv-goal">
@@ -30,7 +30,7 @@ async function revisionPage() {
           : `<p class="rv-empty">Your revision deck is empty. Take a <b>Quiz me</b> on a paper, or add questions below, and they'll come back here to keep them fresh.</p>`
       }
     </section>
-    <h2 class="hand">Your papers</h2>
+    <h2 class="title">Your papers</h2>
     <div class="rv-papers">${r.papers.map(paperRow).join("") || `<p class="muted">Save a paper with the extension to get started.</p>`}</div>`;
 
   app.querySelector("#start-review")?.addEventListener("click", () => revise(null));

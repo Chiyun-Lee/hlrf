@@ -28,7 +28,7 @@ OLD_ARCHIVES = (
     "q-alg|q-bio|quant-ph|solv-int|supr-con"
 )
 ID = rf"\d{{4}}\.\d{{4,5}}|(?:{OLD_ARCHIVES})(?:\.[A-Z]{{2}})?/\d{{7}}"
-http = httpx.Client(timeout=60, follow_redirects=True, headers={"User-Agent": "human-pretraining/0.1 (For you tab)"})
+http = httpx.Client(timeout=60, follow_redirects=True, headers={"User-Agent": "hlrf/0.1 (For you tab)"})
 
 
 def listing_date(submitted_utc: datetime) -> date:

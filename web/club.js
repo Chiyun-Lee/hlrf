@@ -60,16 +60,16 @@ async function clubPage() {
   const [runs, sets, papers, cfg] = await Promise.all([api("/club/runs"), api("/club/cards"), api("/papers").catch(() => []), api("/club/config")]);
   const usable = sets.filter((s) => s.papers.length > 1 && !s.ingesting?.running); // a night needs at least one pair
   app.innerHTML = `
-    <h1 class="hand">Journal club</h1>
+    <h1 class="title">Journal club</h1>
     <p class="muted">Each paper in a card set becomes a PhD-student agent. In one night they compare every pair of papers
       (agree, disagree, shared limitation), debate the clashes under a PI and write ranked research directions. Then the PI
       proposes hypotheses that go beyond the papers, and a second round tests them: the papers they rest on object or
       support, the PI revises or drops them, and the survivors are ranked head to head. Every premise is a quote checked
       word for word against its paper.</p>
-    <h2 class="hand">Nights</h2>
+    <h2 class="title">Nights</h2>
     <div id="club-runs"></div>
     <section class="club-new">
-      <h3 class="hand">Start a night</h3>
+      <h3 class="title">Start a night</h3>
       ${usable.length ? `<form class="club-form">
         <label class="club-field"><span>Papers</span><select name="cards">${usable.map((s) => `<option value="${esc(s.name)}">${esc(s.name)} · ${s.papers.length} papers</option>`).join("")}</select></label>
         <label class="club-field"><span>Question for tonight</span><textarea name="agenda" rows="3" placeholder="What should the club look for? Pick a starting point below or write your own." required></textarea></label>
@@ -79,10 +79,10 @@ async function clubPage() {
         <div class="club-status small" role="status"></div>
       </form>` : `<p class="muted">A night needs a card set of at least two papers. Make one from your library below.</p>`}
     </section>
-    <h2 class="hand">Card sets</h2>
+    <h2 class="title">Card sets</h2>
     <div id="club-sets"></div>
     ${papers.length ? `<form class="club-make-set">
-      <h3 class="hand">Make a card set from your library</h3>
+      <h3 class="title">Make a card set from your library</h3>
       <p class="muted small">One Claude call per paper reads its claims, methods, data and limits, each with a quote checked against the text. Two to 16 papers (a night compares every pair).</p>
       <div class="club-row"><input name="name" placeholder="Set name" pattern="[A-Za-z0-9][A-Za-z0-9_\\-]{0,63}" required /><button class="btn" type="submit">Make cards</button></div>
       <div class="club-pick">${papers.map((p) => `<label><input type="checkbox" value="${p.id}" /> ${esc(p.title)}${p.year ? ` <span class="muted small">${p.year}</span>` : ""}</label>`).join("")}</div>
@@ -214,7 +214,7 @@ async function clubRun(name) {
   app.innerHTML = `<div class="club-page">
     <div class="club-head">
       <a class="small" href="#/club">← Journal club</a>
-      <h1 class="hand">${esc(name)}</h1>
+      <h1 class="title">${esc(name)}</h1>
       <div class="club-run-head">${stateBadge(summary)}${summary.example ? `<span class="club-tag">example</span>` : ""}
         <span class="muted small">${[esc(state.model), `${state.cards.length} papers`, running ? "" : esc(whenLine(summary))].filter(Boolean).join(" · ")}</span></div>
       <blockquote class="club-agenda-big">${esc(state.agenda)}</blockquote>
@@ -335,10 +335,10 @@ function quotes(qs, byId, k) {
 function overviewSection(s, byId) {
   if (!s) return "";
   const groups = Object.entries(POINT_KINDS).map(([kind, label]) => [label, s.key_points.filter((k) => k.kind === kind)]).filter(([, ks]) => ks.length);
-  return `<h2 class="hand">Overview</h2>
+  return `<h2 class="title">Overview</h2>
     <p class="club-overview clamped">${esc(s.overview)}</p>
     <button type="button" class="club-more small">Read the whole overview</button>
-    ${groups.map(([label, ks]) => `<div class="club-points"><h4 class="hand">${label}</h4>${ks.map((k, i) => `<div class="club-point" data-papers="${paperIds(k.quotes)}">${esc(k.text)}${quotes(k.quotes, byId, `point-${label}-${i}`)}</div>`).join("")}</div>`).join("")}`;
+    ${groups.map(([label, ks]) => `<div class="club-points"><h4 class="title">${label}</h4>${ks.map((k, i) => `<div class="club-point" data-papers="${paperIds(k.quotes)}">${esc(k.text)}${quotes(k.quotes, byId, `point-${label}-${i}`)}</div>`).join("")}</div>`).join("")}`;
 }
 
 function pairMap(pairs, cards, key) {
@@ -354,7 +354,7 @@ function pairMap(pairs, cards, key) {
     const rel = pairs[i].relation;
     return `<td class="${rel}" data-i="${i}" data-papers="${esc(a)} ${esc(b)}" title="${esc(key(a))} · ${esc(key(b))}: ${RELATIONS[rel]}"></td>`;
   };
-  return `<h2 class="hand">Pair map</h2>
+  return `<h2 class="title">Pair map</h2>
     <p class="muted small">${pairs.length} of ${(ids.length * (ids.length - 1)) / 2} pairs · ${Object.entries(counts).map(([r, n]) => `<span class="club-rel ${r}">${RELATIONS[r]} ${n}</span>`).join(" ")} · click a cell for the note and quotes, a name to follow one paper</p>
     <div class="club-grid-wrap"><table class="club-grid">
       <tr><th></th>${ids.map((id) => `<th data-paper="${esc(id)}"><span>${esc(key(id))}</span></th>`).join("")}</tr>
@@ -365,7 +365,7 @@ function pairMap(pairs, cards, key) {
 
 function directionsSection(ds, byId) {
   if (!ds.length) return "";
-  return `<h2 class="hand">Directions</h2><p class="muted small">Where the club expects the field to go, ranked by the PI's confidence (0 to 1).</p>
+  return `<h2 class="title">Directions</h2><p class="muted small">Where the club expects the field to go, ranked by the PI's confidence (0 to 1).</p>
     <ol class="club-directions">${ds
       .map(
         (d, i) => `<li data-papers="${esc((d.papers ?? []).join(" "))}">
@@ -384,7 +384,7 @@ function directionsSection(ds, byId) {
 function hypothesesSection(hs, byId, key) {
   if (!hs?.length) return "";
   const alive = hs.filter((r) => r.decision && r.decision !== "drop").length;
-  return `<h2 class="hand">Hypotheses</h2><p class="muted small">The club's own ideas, beyond what any one paper says: each rests on quoted premises
+  return `<h2 class="title">Hypotheses</h2><p class="muted small">The club's own ideas, beyond what any one paper says: each rests on quoted premises
     and names the test that would refute it. ${alive > 1 ? `Ranked by ${(alive * (alive - 1)) / 2} head-to-head comparisons by the PI.` : ""}</p>
     <ol class="club-hypotheses">${hs
       .map((r, i) => {
@@ -416,7 +416,7 @@ function hypothesesSection(hs, byId, key) {
 // Closed by default: the summary line says who clashed and how the PI ruled; opening one shows the exchange.
 function disputesSection(ds, key) {
   if (!ds.length) return "";
-  return `<h2 class="hand">Disputes</h2><p class="muted small">Each clash from the pair map, argued by the two papers' students and called by the PI. Open one for the full exchange.</p>
+  return `<h2 class="title">Disputes</h2><p class="muted small">Each clash from the pair map, argued by the two papers' students and called by the PI. Open one for the full exchange.</p>
     ${ds
       .map(
         (d) => `<details class="club-dispute" data-key="dispute-${esc(d.a)}-${esc(d.b)}" data-papers="${esc(d.a)} ${esc(d.b)}">
@@ -431,7 +431,7 @@ function disputesSection(ds, key) {
 
 function papersSection(cards) {
   if (!cards.length) return "";
-  return `<h2 class="hand">Papers</h2><p class="muted small">Click a paper to show only what involves it.</p>
+  return `<h2 class="title">Papers</h2><p class="muted small">Click a paper to show only what involves it.</p>
     <ul class="club-papers">${cards
       .map((c) => `<li><button type="button" class="club-paper" data-paper="${esc(c.id)}"><b>${esc(c.citekey)}</b> ${esc(c.title)} <i>${esc(c.year)}</i></button>${c.authors?.length ? `<div class="muted small">${esc(shortAuthors(c.authors))}</div>` : ""}</li>`)
       .join("")}</ul>`;
@@ -471,7 +471,7 @@ function renderMinutes(md) {
     if (!line.trim()) continue;
     if ((m = line.match(/^(#{1,3}) (.*)$/))) {
       close();
-      out.push(`<h${m[1].length} class="hand">${inline(m[2])}</h${m[1].length}>`);
+      out.push(`<h${m[1].length} class="title">${inline(m[2])}</h${m[1].length}>`);
     } else if ((m = line.match(/^(-|\d+\.) (.*)$/))) {
       const kind = m[1] === "-" ? "ul" : "ol";
       if (list === kind) {

@@ -64,6 +64,11 @@ async function setupInk(container, paperId, p) {
   }
 }
 
+// Turns ✎ Write on for the open paper (the library's ✎ Whiteboard opens papers this way).
+function startWriting() {
+  ink?.setWriting(true);
+}
+
 // --- Toolbar -------------------------------------------------------------------------------------------------------
 
 function toolbar(state) {
@@ -91,13 +96,13 @@ function toolbar(state) {
     </span>
     <button class="ink-ask" title="Ask about what you wrote on screen">Ask ✦</button>`;
   const write = bar.querySelector(".ink-write");
-  write.onclick = () => {
-    const on = write.getAttribute("aria-pressed") !== "true";
+  state.setWriting = (on) => {
     write.setAttribute("aria-pressed", on);
     bar.querySelector(".ink-tools").hidden = !on;
     state.container.classList.toggle("writing", on);
     if (!on) (document.activeElement?.blur(), select(state, null));
   };
+  write.onclick = () => state.setWriting(write.getAttribute("aria-pressed") !== "true");
   const useTool = (tool) => {
     state.container.classList.remove(`tool-${state.tool}`);
     state.tool = tool;

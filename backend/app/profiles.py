@@ -7,7 +7,7 @@ import httpx
 
 INSPIRE = re.compile(r"inspirehep\.net/authors/(\d+)", re.I)
 MAX_PAPERS = 100  # most recent; collaboration members can have thousands
-http = httpx.Client(timeout=60, follow_redirects=True, headers={"User-Agent": "human-pretraining/0.1 (imports your own publication list)"})
+http = httpx.Client(timeout=60, follow_redirects=True, headers={"User-Agent": "hlrf/0.1 (imports your own publication list)"})
 
 
 class ProfileError(Exception):

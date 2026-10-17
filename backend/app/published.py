@@ -22,7 +22,7 @@ from bs4 import BeautifulSoup
 from .arxiv import ID as ARXIV_ID
 from .schemas import ArxivPaper
 
-UA = "human-pretraining/0.1 (looks up your own papers)"
+UA = "hlrf/0.1 (looks up your own papers)"
 http = httpx.Client(timeout=30, follow_redirects=True, headers={"User-Agent": UA})
 WORKERS = 4  # papers looked up at once
 

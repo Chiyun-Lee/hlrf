@@ -99,7 +99,7 @@ def answer_text(content: list) -> str:
 
 
 # An empty working directory, so Claude Code finds no project files, CLAUDE.md or settings to pick up.
-CLAUDE_CODE_CWD = Path(tempfile.gettempdir()) / "human-pretraining-claude-code"
+CLAUDE_CODE_CWD = Path(tempfile.gettempdir()) / "hlrf-claude-code"
 # Largest single message we take from Claude Code. The SDK's default (1 MB) is smaller than some tool results (a
 # PDF page or an image read whole), and a bigger one ends the run with CLIJSONDecodeError.
 MAX_MESSAGE = 64 * 2**20

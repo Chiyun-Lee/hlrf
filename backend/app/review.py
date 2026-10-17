@@ -42,7 +42,7 @@ from .schemas import Paper, PaperPins, Pin
 log = logging.getLogger(__name__)
 
 BACKEND_DIR = Path(__file__).parent.parent
-REVIEWS_DIR = Path(os.environ.get("REVIEWS_DIR", "~/.human-pretraining/reviews")).expanduser()
+REVIEWS_DIR = Path(os.environ.get("REVIEWS_DIR", "~/.human-pretraining/reviews")).expanduser()  # the name from before HLRF, kept so earlier reviews stay
 MODEL = os.environ.get("REVIEW_MODEL", "claude-opus-5-5")
 EFFORT = os.environ.get("REVIEW_EFFORT", "high")
 SKILLS = {  # given to the agent as project skills, linked into work/.claude/skills

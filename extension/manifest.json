@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Human Pretraining",
+  "name": "HLRF",
   "version": "0.1.0",
-  "description": "Save a paper to read it in the Human Pretraining library.",
+  "description": "Save a paper to read it in the HLRF library.",
   "action": {
     "default_popup": "popup.html"
   },
