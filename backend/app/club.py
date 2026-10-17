@@ -10,11 +10,14 @@ before any Claude call. A run is a thread in this process; the archive is the tr
 the same run again and every finished step is rebuilt from the archive with no LLM calls. JC_LLM=mock in backend/.env
 runs the deterministic offline backend in seconds (UI work, tests)."""
 
+import inspect
 import logging
+import math
 import os
 import re
 import shutil
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -29,6 +32,9 @@ from .schemas import Paper
 import journal_club
 from journal_club.archive import Event
 from journal_club.cards import PaperCard, ingest_text, load_cards, sanitise_id, save_card
+from journal_club.llm import default_backend
+from journal_club.night import run_night
+from journal_club.rounds.map_round import workers
 from journal_club.state import RunState, fold, read_events
 
 log = logging.getLogger(__name__)
@@ -41,6 +47,16 @@ NAME = r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"  # a run or card set name: also its f
 MAX_RUNNING = 2
 MAX_PAPERS = 16  # a night maps every pair: 16 papers is 120 pairs
 
+# How long a night takes, for the estimate before Start and the time left while it runs. Seconds, measured on a
+# 9-paper night with the Claude Code login (claude-opus-5-5, JC_CONCURRENCY=4, 6.5 minutes in all): map calls finish
+# in batches of JC_CONCURRENCY, a debate is one call at a time (each side speaks `turns` times, then the PI rules),
+# directions and the overview (synthesis) are one long call each. The mock backend answers instantly.
+TIMING = {"map_batch": 11.0, "debate_call": 9.0, "directions": 50.0, "synthesis": 30.0}
+_NIGHT = inspect.signature(run_night).parameters
+DEBATE_CAP = _NIGHT["cap"].default  # disagreeing pairs debated per night
+CALLS_PER_DEBATE = 2 * _NIGHT["turns"].default + 1
+BACKENDS = {"agent": "your Claude Code login", "anthropic": "the Anthropic API key", "mock": "the offline mock"}
+
 
 class CardSet(BaseModel):
     """A folder of PaperCards, as GET /club/cards lists it."""
@@ -48,7 +64,19 @@ class CardSet(BaseModel):
     name: str
     example: bool  # shipped with the package; can't be changed
     papers: list[dict]  # id, citekey, title, year, date of each card
+    night_s: int  # about how long a night on this set takes with the current backend (estimate_night_s)
     ingesting: dict | None = None  # {done, total, failed, running} while being made from the library
+
+
+class Progress(BaseModel):
+    """Where a run is, for the progress line. Times come from the run folder: request.json is written when the run is
+    started (or resumed), events.jsonl on every event."""
+
+    step: str | None  # the step under way, None when the run isn't running
+    done: int  # items of that step finished (pairs, disputes)
+    total: int  # items that step will make (for debates, the cap until the map is done)
+    elapsed_s: int | None  # since the run was last started, up to now or to its last event; None for shipped examples
+    remaining_s: int | None  # estimate while running, None otherwise
 
 
 class RunSummary(BaseModel):
@@ -66,11 +94,68 @@ class RunSummary(BaseModel):
     n_disputes: int
     updated: str | None  # ISO 8601, the archive's last write
     error: str | None
+    progress: Progress | None = None
 
 
 class RunView(BaseModel):
     summary: RunSummary
     state: RunState
+
+
+# --- estimates ---
+
+
+def timing() -> dict[str, float]:
+    return dict.fromkeys(TIMING, 0.0) if os.environ.get("JC_LLM") == "mock" else TIMING
+
+
+def step_totals(n_cards: int, pairs: list[dict], map_done: bool) -> dict[str, int]:
+    """Items each night step will make. Debates are the first DEBATE_CAP disagreeing pairs: counted once the map is
+    done, and assumed to be the cap until then (both measured nights reached it; projecting from the first few pairs
+    swung the estimate by minutes)."""
+    n_pairs = n_cards * (n_cards - 1) // 2
+    disagree = sum(p.get("relation") == "disagree" for p in pairs) if map_done else DEBATE_CAP
+    return {"map": n_pairs, "debate": min(DEBATE_CAP, disagree, n_pairs), "directions": 1, "synthesis": 1}
+
+
+def step_seconds(step: str, todo: int, t: dict[str, float], concurrency: int) -> float:
+    """Wall time for `todo` more items of a step."""
+    if step == "map":
+        return math.ceil(todo / concurrency) * t["map_batch"]
+    if step == "debate":
+        return todo * CALLS_PER_DEBATE * t["debate_call"]
+    return todo * t.get(step, 0.0)  # backtest-only steps (baseline, judge) aren't estimated
+
+
+def estimate_night_s(n_cards: int) -> int:
+    """About how long a fresh night on n_cards papers takes."""
+    t, conc = timing(), workers()
+    return round(sum(step_seconds(s, n, t, conc) for s, n in step_totals(n_cards, [], False).items()))
+
+
+def progress(st: RunState, running: bool, started: float | None, last_write: float | None, now: float) -> Progress:
+    """The run's step, its counts and the time left. The time spent since the last event counts against the time
+    left, since an event lands only when a batch of pairs, a debate or a one-call step finishes."""
+    elapsed = round((now if running else last_write) - started) if started and last_write else None
+    if not running:
+        return Progress(step=None, done=0, total=0, elapsed_s=elapsed, remaining_s=None)
+    status = {s.name: s for s in st.steps}
+    totals = step_totals(len(st.cards), st.pairs, "map" in status and status["map"].status == "done")
+    t, conc = timing(), workers()
+    left = 0.0
+    for s in st.steps:
+        if s.status != "done":
+            left += step_seconds(s.name, max(0, totals.get(s.name, 0) - (s.count if s.status == "running" else 0)), t, conc)
+    if left:
+        left = max(left - (now - last_write if last_write else 0), 5.0)
+    current = next((s for s in st.steps if s.status != "done"), None)
+    return Progress(
+        step=current.name if current else None,
+        done=current.count if current and current.status == "running" else 0,
+        total=totals.get(current.name, 0) if current else 0,
+        elapsed_s=elapsed,
+        remaining_s=round(left),
+    )
 
 
 # --- folders ---
@@ -112,7 +197,7 @@ def card_set(name: str, d: Path, example: bool) -> CardSet:
             continue
         papers.append({"id": c.id, "citekey": c.citekey, "title": c.title, "year": c.year, "date": c.date})
     ingest = INGESTS.get(name)
-    return CardSet(name=name, example=example, papers=papers, ingesting=ingest.progress if ingest else None)
+    return CardSet(name=name, example=example, papers=papers, night_s=estimate_night_s(len(papers)), ingesting=ingest.progress if ingest else None)
 
 
 @router.get("/cards")
@@ -171,10 +256,30 @@ INGESTS: dict[str, Ingest] = {}
 RUNNERS: dict[str, "Runner"] = {}
 
 
+def not_ready() -> str | None:
+    """Why a night or a card set can't start now, None when it can (JC_LLM set, e.g. mock, picks its own backend)."""
+    return None if os.environ.get("JC_LLM") else llm.ready()
+
+
 def check_llm() -> None:
-    """503 when Claude can't be called with the current settings (JC_LLM set, e.g. mock, picks its own backend)."""
-    if not os.environ.get("JC_LLM") and (reason := llm.ready()):
+    """503 when Claude can't be called with the current settings."""
+    if reason := not_ready():
         raise HTTPException(503, reason)
+
+
+class ClubConfig(BaseModel):
+    """What the start form needs to know before anything runs."""
+
+    ready: str | None  # not_ready()
+    backend: str  # who answers the club's calls, in words
+    debate_cap: int
+    concurrency: int
+
+
+@router.get("/config")
+def config() -> ClubConfig:
+    backend = os.environ.get("JC_LLM") or default_backend()
+    return ClubConfig(ready=not_ready(), backend=BACKENDS.get(backend, backend), debate_cap=DEBATE_CAP, concurrency=workers())
 
 
 @router.post("/cards", status_code=202)
@@ -241,11 +346,15 @@ def summary(name: str, d: Path, example: bool, events: list[Event] | None = None
     events = read_events(path) if events is None else events
     st = fold(events)
     error = (d / "error.txt").read_text() if (d / "error.txt").exists() else None
-    state = "running" if name in running() else "failed" if error else "done" if st.minutes_written else "stopped"
-    updated = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat(timespec="seconds") if path.exists() else None
+    is_running = name in running()
+    state = "running" if is_running else "failed" if error else "done" if st.minutes_written else "stopped"
+    last_write = path.stat().st_mtime if path.exists() else None
+    started = (d / "request.json").stat().st_mtime if (d / "request.json").exists() else None
+    updated = datetime.fromtimestamp(last_write, timezone.utc).isoformat(timespec="seconds") if last_write else None
     return RunSummary(
         name=name, example=example, kind=st.kind, state=state, agenda=st.agenda, model=st.model, T=st.T,
         n_cards=len(st.cards), n_directions=len(st.directions), n_disputes=len(st.disputes), updated=updated, error=error,
+        progress=progress(st, is_running, started, last_write or started, time.time()),
     )
 
 

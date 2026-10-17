@@ -81,6 +81,8 @@ def test_night_with_mock(club_dir: Path) -> None:
     assert [s["status"] for s in st["steps"]] == ["done"] * 4 and not any(s["reused"] for s in st["steps"])
     assert len(st["pairs"]) == 28 and st["directions"] and st["synthesis"]
     assert client.get("/club/runs/n1/minutes").status_code == 200
+    prog = view["summary"]["progress"]
+    assert prog["step"] is None and prog["remaining_s"] is None and prog["elapsed_s"] >= 0
     # The same POST again resumes: every step is rebuilt from the archive, no LLM work.
     assert client.post("/club/runs", json=req).status_code == 202
     finished("n1")
@@ -124,3 +126,39 @@ def test_card_set_from_library() -> None:
     assert client.post("/club/cards", json={"name": "mine", "paper_ids": [pid]}).status_code == 409
     assert client.post("/club/cards", json={"name": "m2", "paper_ids": [999999]}).status_code == 404
     assert client.post("/club/cards", json={"name": "m3", "paper_ids": []}).status_code == 422
+
+
+def test_config() -> None:
+    cfg = client.get("/club/config").json()
+    assert cfg == {"ready": None, "backend": "the offline mock", "debate_cap": club.DEBATE_CAP, "concurrency": 2}
+
+
+def test_estimates(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("JC_LLM")
+    monkeypatch.setenv("JC_CONCURRENCY", "4")
+    assert club.step_totals(9, [], False) == {"map": 36, "debate": club.DEBATE_CAP, "directions": 1, "synthesis": 1}
+    some = [{"relation": "disagree"}] * 2 + [{"relation": "agree"}] * 16
+    assert club.step_totals(9, some, False)["debate"] == club.DEBATE_CAP  # the cap until the map is done
+    assert club.step_totals(9, some, True)["debate"] == 2
+    assert club.step_totals(2, [], False)["debate"] == 1  # one pair, at most one debate
+    assert 5 * 60 <= club.estimate_night_s(9) <= 8 * 60  # the measured 9-paper night took 6.5 minutes
+    assert club.estimate_night_s(2) < club.estimate_night_s(9) < club.estimate_night_s(16)
+    sets = {s["name"]: s for s in client.get("/club/cards").json()}
+    assert sets["desi"]["night_s"] == club.estimate_night_s(9)
+
+
+def test_progress(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("JC_LLM")
+    events = club.read_events(club.EXAMPLES / "runs" / "desi-night-1" / "events.jsonl")
+    first_map = next(i for i, e in enumerate(events) if e.type == "pair_verdict")
+    early, later = club.fold(events[: first_map + 4]), club.fold(events[: first_map + 20])
+    p = club.progress(early, True, started=1000.0, last_write=1060.0, now=1063.0)
+    assert (p.step, p.done, p.total, p.elapsed_s) == ("map", 4, 28, 63) and p.remaining_s > 0
+    q = club.progress(later, True, started=1000.0, last_write=1060.0, now=1063.0)
+    assert q.done == 20 and q.remaining_s < p.remaining_s
+    stale = club.progress(later, True, started=1000.0, last_write=1060.0, now=99999.0)
+    assert stale.remaining_s == 5  # overdue: a floor, never zero or negative while running
+    done = club.progress(club.fold(events), False, started=1000.0, last_write=1390.0, now=5000.0)
+    assert (done.step, done.elapsed_s, done.remaining_s) == (None, 390, None)
+    example = {r["name"]: r for r in client.get("/club/runs").json()}["desi-night-1"]
+    assert example["progress"]["elapsed_s"] is None  # shipped examples have no request.json

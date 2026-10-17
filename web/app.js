@@ -38,6 +38,7 @@ const routes = [
   [/^#\/me$/, me],
   [/^#\/club$/, clubPage],
   [/^#\/club\/runs\/([A-Za-z0-9_-]+)$/, clubRun],
+  [/^#\/club\/runs\/([A-Za-z0-9_-]+)\/minutes$/, clubMinutes],
 ];
 
 async function route() {
