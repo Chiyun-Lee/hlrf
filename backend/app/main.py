@@ -140,8 +140,8 @@ def get_summary(paper_id: int, page: int) -> PageSummary:
 
 @app.get("/papers/{paper_id}/pins")
 def get_pins(paper_id: int) -> PaperPins | None:
-    """Methods pins for the paper's figures and tables (app/pins.py); null when it has none."""
-    return pins.for_paper(get_paper_or_404(paper_id))
+    """Methods pins for the paper's figures and tables (app/pins.py): an agent review's, else shipped; null when none."""
+    return pins.for_paper(paper_id, get_paper_or_404(paper_id))
 
 
 # --- Agent review: Claude Code reviews the paper in the background and writes its pins (app/review.py) ---

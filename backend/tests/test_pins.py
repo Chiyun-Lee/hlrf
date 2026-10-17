@@ -29,20 +29,26 @@ def test_shipped_pins_are_short_and_readable():
                 assert len(pin.researcher.split()) <= 45, pin.researcher
 
 
+def shipped(paper: Paper):
+    return pins.for_paper(db.save(paper), paper)  # a library paper without generated pins
+
+
 def test_pins_only_where_the_caption_matches():
-    found = pins.for_paper(cosmography())
+    found = shipped(cosmography())
     assert found and found.reviewed and [t.label for t in found.targets] == ["Figure 1"]
-    assert pins.for_paper(cosmography(url="https://arxiv.org/pdf/2506.22373"))  # any version or link form finds the file
-    assert pins.for_paper(cosmography(caption_y=600)) is None  # caption far below the stored box: another layout
-    assert pins.for_paper(cosmography(page=3)) is None  # figure moved to another page
-    assert pins.for_paper(cosmography(url="https://arxiv.org/abs/2401.00001")) is None  # no pins written
-    assert pins.for_paper(cosmography(url="https://example.org/paper.pdf")) is None  # not an arXiv paper
+    assert shipped(cosmography(url="https://arxiv.org/pdf/2506.22373"))  # any version or link form finds the file
+    assert shipped(cosmography(caption_y=600)) is None  # caption far below the stored box: another layout
+    assert shipped(cosmography(page=3)) is None  # figure moved to another page
+    assert shipped(cosmography(url="https://arxiv.org/abs/2401.00001")) is None  # no pins written
+    assert shipped(cosmography(url="https://example.org/paper.pdf")) is None  # not an arXiv paper
 
 
 def test_pins_route():
     paper_id = db.save(cosmography())
     found = client.get(f"/papers/{paper_id}/pins").json()
     assert [t["label"] for t in found["targets"]] == ["Figure 1"]
+    figure_1 = next(t for t in pins.load("2506.22373").targets if t.label == "Figure 1")
+    assert found["targets"][0]["pins"] == [p.model_dump() for p in figure_1.pins]
     assert [p["kind"] for p in found["targets"][0]["pins"]] == ["data", "concern", "method"]
     assert client.get(f"/papers/{db.save(cosmography(page=3))}/pins").json() is None
     assert client.get("/papers/999999/pins").status_code == 404

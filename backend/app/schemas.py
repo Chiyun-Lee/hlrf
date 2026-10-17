@@ -82,16 +82,18 @@ class PinTarget(BaseModel):
 
     label: str  # "Figure 1", "Table II"
     page: int  # 0-indexed
-    caption: str  # how its caption starts ("Figure 1."); the pins only show if the page has it right below `bbox`
-    bbox: list[float]  # [x0, y0, x1, y1] in PDF points from the page's top-left, as in Block.bbox
+    caption: str  # how its caption starts ("Figure 1."); the pins only show if the page has it right below or above `bbox`
+    bbox: list[float]  # [x0, y0, x1, y1] in PDF points from the page's top-left, as in Block.bbox; without the caption
     pins: list[Pin]
 
 
 class PaperPins(BaseModel):
-    """All the pins for one paper: one JSON file per arXiv id in app/pins/."""
+    """All the pins for one paper: an agent review's for a library paper (stored in the database), or shipped as one
+    JSON file per arXiv id in app/pins/."""
 
-    arxiv_id: str  # without the version
+    arxiv_id: str | None = None  # without the version; None for a paper not on arXiv
     reviewed: str  # what the pins rest on, shown under each pin
+    verdict: str | None = None  # the review's bottom line, in 1-2 sentences
     targets: list[PinTarget]
 
 
