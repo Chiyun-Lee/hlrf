@@ -1,11 +1,12 @@
 // For you: the latest arXiv listing ranked for you (backend/app/feed.py, ranker.py), as a quick daily triage.
-// Each top pick gets a short summary: what the paper does and why you'd care, given your own papers
+// Every paper gets a short summary, top picks first: what it does and why you'd care, given your own papers
 // (backend/app/pitch.py). Sorting a paper (Add to library, More like this, Not for me) trains the ranking and counts
 // toward a daily goal; meeting it on consecutive listing days builds a streak. Keys: j/k move, a/m/n sort, o opens.
 //   #/for-you              the latest listing day
 //   #/for-you/2026-10-15   a given day
 
-const PICKS = 5; // shown in full with a summary; the rest of the day is a compact list
+const PICKS = 5; // shown large at the top; the rest of the day follows in a tighter list
+const SUMMARY_BATCH = 8; // papers per summary request after the picks; batches run in parallel
 const JSON_HEADERS = { "Content-Type": "application/json" };
 const ORDER = {
   model: "ranked by your papers and what you’ve liked, opened and saved",
@@ -67,7 +68,7 @@ async function forYou(day) {
   root.addEventListener("click", (e) => onClick(root, e));
   wireMine(root);
   window.MathJax?.typesetPromise?.([root]);
-  loadSummaries(root, picks);
+  loadAllSummaries(root, picks, rest);
 }
 
 // --- rendering ---
@@ -82,20 +83,19 @@ function paperEntry(p, full) {
         <h3 class="fy-title"><a href="${esc(p.abs_url)}" target="_blank" rel="noopener" data-click>${esc(p.title)}</a></h3>
         <p class="fy-authors">${esc(authorLine(p.authors))}</p>
         <p class="fy-meta">${meta}</p>
-        <div class="fy-summary"${full ? "" : " hidden"}></div>
-        <div class="fy-abstract" hidden>${esc(p.abstract)}</div>
+        <div class="fy-summary"></div>
         <div class="fy-actions">
-          ${full ? "" : `<button type="button" class="fy-btn fy-toggle" data-show="summary" aria-expanded="false">Summary</button>`}
           ${libraryControl(p)}
           <button type="button" class="fy-btn fy-thumb" data-kind="up" aria-pressed="${p.feedback === "up"}">${thumbLabel(p, "up")}<kbd>M</kbd></button>
           <button type="button" class="fy-btn fy-thumb" data-kind="down" aria-pressed="${p.feedback === "down"}">${thumbLabel(p, "down")}<kbd>N</kbd></button>
           <span class="fy-links">
-            ${full ? `<button type="button" class="fy-toggle" data-show="abstract" aria-expanded="false">Abstract</button>` : ""}
+            <button type="button" class="fy-toggle" aria-expanded="false">Abstract</button>
             <a href="${esc(p.abs_url)}" target="_blank" rel="noopener" data-click>arXiv</a>
             <a href="${esc(p.pdf_url)}" target="_blank" rel="noopener" data-click>PDF</a>
           </span>
           ${full && p.score != null ? `<span class="fy-score" title="Your model's ranking score for this paper, 0 to 1">${p.score.toFixed(2)}</span>` : ""}
         </div>
+        <div class="fy-abstract" hidden>${esc(p.abstract)}</div>
         <p class="fy-error" role="alert" hidden></p>
       </div>
     </li>`;
@@ -176,8 +176,18 @@ function updateProgress(root, res) {
 
 // --- summaries ---
 
+// The picks first, since they're read first; then the rest of the day in parallel batches.
+async function loadAllSummaries(root, picks, rest) {
+  rest.forEach((p) => showSummary(root, p, "loading"));
+  await loadSummaries(root, picks);
+  const batches = [];
+  for (let i = 0; i < rest.length; i += SUMMARY_BATCH) batches.push(rest.slice(i, i + SUMMARY_BATCH));
+  await Promise.all(batches.map((batch) => loadSummaries(root, batch)));
+}
+
 async function loadSummaries(root, papers) {
   if (!papers.length) return;
+  if (!root.state.summaries) return papers.forEach((p) => showSummary(root, p, null)); // known to fail; don't ask again
   papers.forEach((p) => showSummary(root, p, "loading"));
   try {
     const body = JSON.stringify({ papers: papers.map(({ id, title, abstract, reasons }) => ({ id, title, abstract, reasons })) });
@@ -191,7 +201,6 @@ async function loadSummaries(root, papers) {
         ? "Summaries need ANTHROPIC_API_KEY in backend/.env. Showing abstracts until then."
         : `Couldn't write summaries (${e.message}). Showing abstracts instead.`;
     notice.hidden = false;
-    root.querySelectorAll('.fy-toggle[data-show="summary"]').forEach((b) => (b.textContent = "Abstract"));
     papers.forEach((p) => showSummary(root, p, null));
   }
 }
@@ -204,7 +213,6 @@ function showSummary(root, p, pitch) {
   if (pitch === "loading") box.innerHTML = `<p>Summarising for you</p>`;
   else if (pitch) box.innerHTML = `<p class="fy-what"><b>What it does</b> ${esc(pitch.what)}</p><p class="fy-why"><b>Why you’d care</b> ${esc(pitch.why)}</p>`;
   else box.innerHTML = `<p>${esc(p.abstract)}</p>`;
-  if (pitch !== "loading") box.dataset.ready = "";
   window.MathJax?.typesetPromise?.([box]);
 }
 
@@ -224,7 +232,10 @@ async function onClick(root, e) {
   } else if (e.target.closest(".fy-add")) {
     await addToLibrary(root, li, p, fromKeys);
   } else if (e.target.closest(".fy-toggle")) {
-    toggle(root, li, p, e.target.closest(".fy-toggle"));
+    const box = li.querySelector(".fy-abstract");
+    box.hidden = !box.hidden;
+    e.target.closest(".fy-toggle").setAttribute("aria-expanded", !box.hidden);
+    window.MathJax?.typesetPromise?.([box]);
   }
 }
 
@@ -272,16 +283,6 @@ async function addToLibrary(root, li, p, moveOn) {
     button.firstChild.textContent = "Add to library";
     flashError(li, `Couldn't add this paper: ${e.message}`);
   }
-}
-
-// Summary / Abstract buttons: show or hide that part, writing a compact row's summary on first open.
-function toggle(root, li, p, button) {
-  const wantsSummary = button.dataset.show === "summary" && root.state.summaries;
-  const box = li.querySelector(wantsSummary ? ".fy-summary" : ".fy-abstract");
-  box.hidden = !box.hidden;
-  button.setAttribute("aria-expanded", !box.hidden);
-  if (wantsSummary && !box.hidden && !("ready" in box.dataset)) loadSummaries(root, [p]);
-  if (!wantsSummary) window.MathJax?.typesetPromise?.([box]);
 }
 
 function flashError(li, message) {
