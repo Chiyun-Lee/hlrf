@@ -1,7 +1,6 @@
 // Summary cards (backend/app/cards.py), shown under the graphical abstract: TL;DR with headline numbers, logic flow,
 // mind map, key findings, evidence map, caveats, charts redrawn from the paper's own numbers, key figures cropped
-// from the PDF, and a concept check. The concept check complements the Duolingo-style quiz (quiz.js); "Quiz me ✦"
-// still runs that one.
+// from the PDF. The quiz lives in quiz.js ("Quiz me ✦").
 
 // `deck`: a promise of the cards (GET or POST /papers/:id/cards), started by the caller so it can run alongside
 // the abstract.
@@ -18,8 +17,6 @@ async function showCards(el, paperId, deck) {
   }
   el.innerHTML = cardsHtml(c);
   el.querySelector("[data-act=remake-cards]").onclick = () => showCards(el, paperId, api(`/papers/${paperId}/cards`, { method: "POST" }));
-  const check = el.querySelector(".concept-check");
-  if (check) runChecks(check, c.checks, paperId);
 }
 
 function cardsHtml(c) {
@@ -80,7 +77,6 @@ function cardsHtml(c) {
       ),
     );
   out.push(card("Caveats", "Keep in mind", list(c.caveats), true));
-  if (c.checks.length) out.push(card("Concept check", "Test your understanding", `<div class="concept-check"></div>`, true));
 
   return `<section class="summary-cards">
     <div class="sc-head"><h2>Summary cards</h2><button data-act="remake-cards">Remake cards</button></div>
@@ -155,38 +151,3 @@ function fmt(v) {
   return Math.abs(v) >= 1e4 || (Math.abs(v) < 1e-3 && v !== 0) ? v.toExponential(1) : String(+v.toPrecision(6));
 }
 
-// Inline multiple choice: pick an answer to see whether it's right and why. Options are shuffled each time.
-function runChecks(el, checks, paperId) {
-  let answered = 0, right = 0;
-  const qs = checks.map((q) => {
-    const order = q.options.map((_, i) => i).sort(() => Math.random() - 0.5);
-    return { ...q, options: order.map((i) => q.options[i]), answer: order.indexOf(q.answer) };
-  });
-  el.innerHTML = `<p class="muted small">Pick an answer to see whether it's right and why. <span class="cc-score"></span></p>
-    ${qs
-      .map(
-        (q, k) => `<div class="cc-q" data-k="${k}"><p>${k + 1}. ${esc(q.question)}</p>
-          <div class="cc-opts">${q.options.map((o, i) => `<button data-i="${i}">${String.fromCharCode(65 + i)}. ${esc(o)}</button>`).join("")}</div>
-          <div class="cc-why"></div></div>`,
-      )
-      .join("")}
-    <div class="cc-actions"><button data-act="reset">Reset</button><button data-act="quiz" class="quiz-button">Want the full drill? Quiz me ✦</button></div>`;
-  el.onclick = (e) => {
-    const b = e.target.closest("button");
-    if (!b) return;
-    if (b.dataset.act === "reset") return runChecks(el, checks, paperId);
-    if (b.dataset.act === "quiz") return (el.closest(".overlay")?.remove(), startQuiz(paperId));
-    const box = b.closest(".cc-q");
-    const q = qs[+box.dataset.k];
-    const picked = +b.dataset.i;
-    box.querySelectorAll("button").forEach((x) => {
-      x.disabled = true;
-      if (+x.dataset.i === q.answer) x.classList.add("right");
-      else if (+x.dataset.i === picked) x.classList.add("wrong");
-    });
-    answered++;
-    if (picked === q.answer) right++;
-    box.querySelector(".cc-why").textContent = `${picked === q.answer ? "Correct." : "Not quite."} ${q.why}`;
-    el.querySelector(".cc-score").textContent = `Score: ${right} / ${answered} of ${qs.length}`;
-  };
-}

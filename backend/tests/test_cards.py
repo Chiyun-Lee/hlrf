@@ -22,7 +22,6 @@ def deck(**overrides) -> SummaryCards:
         findings=["f"],
         evidence=[{"claim": "c", "evidence": "e"}],
         caveats=["c"],
-        checks=[{"question": "q", "options": ["a", "b"], "answer": 1, "why": "w"}],
     )
     return SummaryCards.model_validate(base | overrides)
 
@@ -42,11 +41,6 @@ def test_numbers_must_be_printed_in_the_paper():
 
 def test_clean_trims_and_drops_bad_content():
     cards = deck(
-        checks=[
-            {"question": "ok", "options": ["a", "b"], "answer": 1, "why": "w"},
-            {"question": "bad index", "options": ["a", "b"], "answer": 5, "why": "w"},
-            {"question": "one option", "options": ["a"], "answer": 0, "why": "w"},
-        ],
         charts=[
             {"title": "real", "axis": "Ωm", "source": "text", "caption": "c",
              "items": [item("0.2975 ± 0.0086", 0.2975, 0.2889, 0.3061), item("68.50", 68.5, 70, 71)]},
@@ -57,7 +51,6 @@ def test_clean_trims_and_drops_bad_content():
     )
     cards = clean(cards, PAPER, NOTES)
     assert len(cards.stats) == 4 and len(cards.mindmap) == 4
-    assert [q.question for q in cards.checks] == ["ok"]
     assert [c.title for c in cards.charts] == ["real"]
     assert cards.charts[0].items[1].low is None  # interval not containing the value is dropped
     assert [f.figure for f in cards.figures] == ["p0n1"]

@@ -207,15 +207,6 @@ class CardFigure(BaseModel):
     height: float | None = None
 
 
-class CheckQuestion(BaseModel):
-    """A concept check shown inline on the cards. Complements the Duolingo-style quiz (app/quiz.py), not a replacement."""
-
-    question: str
-    options: list[str]
-    answer: int  # index into options
-    why: str  # one line, shown after answering
-
-
 class SummaryCards(BaseModel):
     """A deck of summary cards for the whole paper (rendered by web/cards.js under the graphical abstract)."""
 
@@ -229,7 +220,6 @@ class SummaryCards(BaseModel):
     caveats: list[str]
     charts: list[Chart] = []
     figures: list[CardFigure] = []
-    checks: list[CheckQuestion]
 
 
 class QuizQuestion(BaseModel):

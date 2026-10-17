@@ -375,7 +375,7 @@ input[type="search"] { width: 100%; box-sizing: border-box; padding: 10px 12px; 
 .summary-cards { margin-top: 18px; }
 .sc-head { display: flex; align-items: center; justify-content: space-between; margin: 0 2px 10px; }
 .sc-head h2 { margin: 0; font-size: 20px; }
-.sc-head button, .cards-retry button, .cc-actions button { font: inherit; font-size: 14px; padding: 5px 14px; border: 1px solid var(--ink);
+.sc-head button, .cards-retry button { font: inherit; font-size: 14px; padding: 5px 14px; border: 1px solid var(--ink);
   border-radius: 8px; background: var(--card); color: var(--ink); cursor: pointer; }
 .cards-retry { text-align: center; margin-bottom: 16px; }
 .sc-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
@@ -427,17 +427,5 @@ input[type="search"] { width: 100%; box-sizing: border-box; padding: 10px 12px; 
 .sc-figures { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
 .sc-figures figure { margin: 0; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 8px; }
 .sc-figures img { display: block; width: 100%; height: auto; background: #fff; }
-.cc-q { padding: 10px 0; border-top: 1px solid var(--border); }
-.cc-q:first-of-type { border-top: 0; }
-.cc-q p { margin: 0 0 8px; font-weight: 600; }
-.cc-opts { display: grid; gap: 6px; }
-.cc-opts button { font: inherit; text-align: left; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card);
-  color: var(--text); cursor: pointer; }
-.cc-opts button:hover:not(:disabled) { border-color: var(--accent); }
-.cc-opts button:disabled { cursor: default; }
-.cc-opts button.right { border-color: #58cc02; background: #d7ffb8; }
-.cc-opts button.wrong { border-color: #ea2b2b; background: #ffdfe0; }
-.cc-why { margin-top: 6px; font-size: 13px; color: var(--muted); }
-.cc-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 @media (max-width: 560px) { .sc-mind { grid-template-columns: 1fr; gap: 10px; } .sc-mind-lines { display: none; }
   .sc-mind-topic { position: static; transform: none; max-width: none; justify-self: center; } }

@@ -1,7 +1,6 @@
 """Summary cards for the whole paper: a TL;DR with headline numbers, a logic flow, a mind map, key findings, an
-evidence map, caveats, simple charts redrawn from numbers the paper states, the key figures cropped from the PDF, and
-a concept check. web/cards.js draws them under the graphical abstract. The concept check complements the
-Duolingo-style quiz (app/quiz.py); it doesn't replace it."""
+evidence map, caveats, simple charts redrawn from numbers the paper states and the key figures cropped from the PDF.
+web/cards.js draws them under the graphical abstract."""
 
 import logging
 import math
@@ -39,9 +38,7 @@ names and key terms; never add claims the paper doesn't make. Plain, warm langua
   the text (with its uncertainty if any); `value` is that number; `low`/`high` the interval when the paper gives one
   (value ± error gives low = value - error). `source` says where (e.g. "Table 4"). No chart beats a made-up one.
 - figures: up to 6 of the paper's figures worth looking at, best first, by id from the figure notes (e.g. "p3n1"),
-  each with a callout (under ~20 words) saying what to notice. Prefer main figures. Only ids given; none if none.
-- checks: 6-8 multiple-choice concept checks with 4 options, exactly one right, testing why and how rather than
-  trivia. Wrong options plausible. `why`: one line explaining the answer. Vary which option is right."""
+  each with a callout (under ~20 words) saying what to notice. Prefer main figures. Only ids given; none if none."""
 
 
 def make(paper: Paper, summaries: list[PageSummary], pdf: bytes | None) -> SummaryCards:
@@ -66,13 +63,12 @@ def paper_text(paper: Paper) -> str:
 
 
 def clean(cards: SummaryCards, paper: Paper, summaries: list[PageSummary]) -> SummaryCards:
-    """Guardrails on what came back: sensible lengths, answerable checks, charts only from numbers in the text,
-    figures only from real figure notes."""
+    """Guardrails on what came back: sensible lengths, charts only from numbers in the text, figures only from real
+    figure notes."""
     if not cards.tldr.strip() or not cards.flow:
         raise RuntimeError("The cards came back without a TL;DR or a flow")
     cards.stats, cards.flow, cards.mindmap = cards.stats[:4], cards.flow[:6], cards.mindmap[:4]
     cards.findings, cards.evidence, cards.caveats = cards.findings[:6], cards.evidence[:7], cards.caveats[:5]
-    cards.checks = [q for q in cards.checks if len(q.options) >= 2 and 0 <= q.answer < len(q.options)][:8]
 
     text = normalise(paper_text(paper))
     charts = []
