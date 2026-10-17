@@ -62,6 +62,8 @@ class BacktestReport(BaseModel):
     baseline_rate: float
     club_weighted_rate: float
     baseline_weighted_rate: float
+    baseline: bool = True  # False when the backtest ran the club arm only (no baseline call, no baseline verdicts)
+    judge_read_fulltext: list[str] = []  # after-T papers the judge read in full; the rest only as cards
 
 
 # ---------------------------------------------------------------- helpers
@@ -180,8 +182,10 @@ def judge(
     archive: Archive,
     label: Label,
     round: int = 1,
+    fulltexts: dict[str, str] | None = None,
 ) -> list[Hit]:
-    """One `judge` call per direction on the judge model, in parallel batches; resumable per label."""
+    """One `judge` call per direction on the judge model, in parallel batches; resumable per label. The judge reads
+    each after-T card and, when `fulltexts` has it, the paper's full text (never archived)."""
     after_ids = {c.id for c in after}
     done = hits_from_events(archive, label)
     if archive.has_step("judge", label):
@@ -195,7 +199,7 @@ def judge(
 
     def call(d: Direction) -> Hit:
         """Judge one direction on a worker thread."""
-        raw = llm.complete_json("judge", system, prompts.build_judge(d, after), schema)
+        raw = llm.complete_json("judge", system, prompts.build_judge(d, after, fulltexts), schema)
         return _to_hit(raw, d, after_ids, label)
 
     def record(hits: list[Hit]) -> None:
@@ -329,15 +333,19 @@ def render_report(report: BacktestReport, after: list[PaperCard], club_rejected:
         f"- after-T papers: {', '.join(report.after_ids)}",
         f"- main model: {_main_model_name()}",
         f"- judge model: {report.judge_model}",
+        f"- judge read in full: {', '.join(report.judge_read_fulltext) or 'none (cards only)'}",
         "",
         "| arm | directions proposed | kept after quote gate | hits | partial | miss | strict rate | weighted rate |",
         "|---|---|---|---|---|---|---|---|",
         _summary_row("club", report.club_directions, report.club_hits, club_rejected),
-        _summary_row("baseline", report.baseline_directions, report.baseline_hits, baseline_rejected),
+        *([_summary_row("baseline", report.baseline_directions, report.baseline_hits, baseline_rejected)] if report.baseline else []),
         "",
     ]
+    if not report.baseline:
+        lines += ["No baseline in this backtest: the club's directions are judged on their own.", ""]
     lines += _arm_table("Club", report.club_hits, by_id)
-    lines += _arm_table("Baseline", report.baseline_hits, by_id)
+    if report.baseline:
+        lines += _arm_table("Baseline", report.baseline_hits, by_id)
     lines.append(REPORT_NOTE)
     return "\n".join(lines) + "\n"
 
@@ -353,6 +361,8 @@ def _start_run(
     agenda: str,
     judge_model: str,
     round: int,
+    explore: bool = False,
+    baseline: bool = True,
 ) -> None:
     """Append run_started (before-T snapshot only) and split on a fresh archive; check both shas when resuming."""
     sha = card_ids_sha(before)
@@ -372,6 +382,8 @@ def _start_run(
         "card_ids_sha": sha,
         "cards_sha": card_content_sha(before),
         "T": T,
+        "explore": explore,
+        "baseline": baseline,
         "cards": [c.model_dump() for c in before],
     }
     archive.append(_event("map", "run_started", [], payload, round))
@@ -379,11 +391,14 @@ def _start_run(
     archive.append(_event("backtest", "split", [], split, round))
 
 
-def _club(before: list[PaperCard], llm: LLM, archive: Archive, agenda: str, judge_model: str, round: int) -> list[Direction]:
-    """Default club arm: the full night (map -> debate -> directions) on the before-T cards."""
+def _club(
+    before: list[PaperCard], llm: LLM, archive: Archive, agenda: str, judge_model: str, round: int, explore: bool = False
+) -> list[Direction]:
+    """Default club arm: the night on the before-T cards; its directions are what gets judged. With `explore` the night
+    also proposes and tests hypotheses (shown in the minutes and the run page, not judged)."""
     from journal_club.night import run_night
 
-    return run_night(before, llm, archive, agenda, round=round, judge_model=judge_model, explore=False).directions
+    return run_night(before, llm, archive, agenda, round=round, judge_model=judge_model, explore=explore).directions
 
 
 def run_backtest(
@@ -397,21 +412,32 @@ def run_backtest(
     n_baseline: int = 10,
     club_directions: ClubFn | None = None,
     round: int = 1,
+    explore: bool = False,
+    with_baseline: bool = True,
+    fulltexts: dict[str, str] | None = None,
 ) -> BacktestReport:
-    """Split at T, run club and baseline on before-T, judge both on after-T, write report.md."""
+    """Split at T, run club (and the baseline unless `with_baseline=False`) on before-T, judge on after-T, write
+    report.md. `explore` lets the club's night propose and test hypotheses too; only directions are judged.
+    `fulltexts` ({card id: text}, cards.load_fulltexts) lets the judge read the after-T papers in full."""
     before, after = split_by_date(cards, T)
     judge_llm = judge_llm or get_llm("judge")
     judge_model = _judge_model_name()
-    _start_run(archive, before, after, T, agenda, judge_model, round)
+    _start_run(archive, before, after, T, agenda, judge_model, round, explore, with_baseline)
     if club_directions is None:
-        club = _club(before, llm, archive, agenda, judge_model, round)
+        club = _club(before, llm, archive, agenda, judge_model, round, explore)
     else:
         club = club_directions(before)
-    baseline = run_baseline(before, llm, archive, n=n_baseline, agenda=agenda, round=round)
+    baseline = run_baseline(before, llm, archive, n=n_baseline, agenda=agenda, round=round) if with_baseline else []
     after_ids = {c.id for c in after}
     assert_no_leakage(archive, after_ids)
-    club_hits = judge(club, after, judge_llm, archive, "club", round=round)
-    baseline_hits = judge(baseline, after, judge_llm, archive, "baseline", round=round)
+    after_texts = {c.id: fulltexts[c.id] for c in after if (fulltexts or {}).get(c.id, "").strip()}
+    if len(after_texts) < len(after):
+        log.warning("backtest: judge reads %d of %d after-T papers as cards only (no <id>.txt beside them)",
+                    len(after) - len(after_texts), len(after))
+    club_hits = judge(club, after, judge_llm, archive, "club", round=round, fulltexts=after_texts)
+    baseline_hits = (
+        judge(baseline, after, judge_llm, archive, "baseline", round=round, fulltexts=after_texts) if with_baseline else []
+    )
     report = BacktestReport(
         T=T,
         before_ids=[c.id for c in before],
@@ -425,9 +451,11 @@ def run_backtest(
         baseline_rate=hit_rate(baseline_hits),
         club_weighted_rate=weighted_rate(club_hits),
         baseline_weighted_rate=weighted_rate(baseline_hits),
+        baseline=with_baseline,
+        judge_read_fulltext=sorted(after_texts),
     )
     archive.append(_event("backtest", "report", [], report.model_dump(), round))
     path = Path(archive.path).parent / "report.md"
     path.write_text(render_report(report, after, _rejected(archive, "directions"), _rejected(archive, "baseline")), encoding="utf-8")
-    log.info("backtest: club %.2f vs baseline %.2f strict; report at %s", report.club_rate, report.baseline_rate, path)
+    log.info("backtest: club %.2f vs baseline %.2f strict; report at %s", report.club_rate, report.baseline_rate if with_baseline else float("nan"), path)
     return report

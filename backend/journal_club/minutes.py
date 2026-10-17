@@ -19,9 +19,11 @@ REJECTED_TYPES = ("quote_rejected", "turn_unverified", "direction_rejected", "hy
 
 
 def _window(events: list[Event], step: Step) -> list[Event]:
-    """Events of `step` after its last step_started, if a step_done follows; else all of them."""
+    """Events of `step` from its last fresh step_started, if a step_done follows; else all of them. A step_started
+    that reused earlier items (a resume after a crash mid-step) continues the window before it rather than opening a
+    new one, so the items it reused stay in view."""
     evs = [e for e in events if e.step == step]
-    starts = [i for i, e in enumerate(evs) if e.type == "step_started"]
+    starts = [i for i, e in enumerate(evs) if e.type == "step_started" and not e.payload.get("reused")]
     if not starts:
         return evs
     tail = evs[starts[-1] :]

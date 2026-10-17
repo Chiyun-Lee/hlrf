@@ -100,6 +100,8 @@ def fold(events: list[Event]) -> RunState:
     split = next((e.payload for e in events if e.step == "backtest" and e.type == "split"), {})
     explored = started.get("explore", False) or any(e.step in EXPLORE_STEPS for e in events)
     steps = [s for s in (BACKTEST_STEPS if is_backtest else NIGHT_STEPS) if explored or s not in EXPLORE_STEPS]
+    if started.get("baseline") is False:  # a backtest of the club arm alone
+        steps.remove("baseline")
     return RunState(
         kind="backtest" if is_backtest else "night",
         agenda=_agenda(events),

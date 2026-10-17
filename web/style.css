@@ -778,17 +778,24 @@ button.club-chip:hover, .club-chip.on { background: var(--ink); color: #fff; }
 
 .club-head h1 { margin-top: 2px; }
 .club-agenda-big { margin: 12px 0; padding: 8px 14px; border-left: 3px solid var(--ink); font-size: 17px; }
-.club-steps { display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 12px 0; list-style: none; counter-reset: step; }
-.club-steps li { display: flex; gap: 8px; align-items: baseline; padding: 4px 12px; border: 1.5px solid var(--border); border-radius: 10px; font: 15px var(--hand); color: var(--muted); }
-.club-steps li.done { border-color: var(--ink); color: var(--ink); background: var(--ink-soft); }
-.club-steps li.running { border-color: var(--warn); color: var(--warn); border-style: dashed; }
+/* One line, scrolling sideways when it doesn't fit: wrapped, it would eat a phone's screen and split a round. */
+.club-strip { display: flex; align-items: center; gap: 10px; }
+.club-steps { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; overflow-x: auto; scrollbar-width: thin; padding-bottom: 2px; }
+.club-round { display: flex; flex: none; align-items: center; gap: 6px; }
+.club-round + .club-round { padding-left: 10px; border-left: 1px solid var(--border); }
+.club-round-label { font: 11px var(--sans); color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
+.club-round ol { display: flex; gap: 6px; padding: 0; margin: 0; list-style: none; }
+.club-steps li button { display: flex; gap: 5px; align-items: baseline; white-space: nowrap; padding: 3px 8px; border: 1.5px solid var(--border); border-radius: 10px; font: 15px var(--hand); color: var(--muted); background: none; cursor: pointer; }
+.club-steps li.done button { border-color: var(--ink); color: var(--ink); background: var(--ink-soft); }
+.club-steps li.running button { border-color: var(--warn); color: var(--warn); border-style: dashed; }
+.club-steps li button:not(:disabled):hover span { text-decoration: underline; }
+.club-steps li button:disabled { cursor: default; }
 .club-steps li b { font: 13px var(--sans); }
 .club-steps li i { font-style: normal; font-size: 13px; }
+.club-steps-papers { flex: none; font: 16px var(--hand); color: var(--ink); background: none; border: 0; padding: 2px 0; cursor: pointer; }
+.club-steps-papers:hover { text-decoration: underline; }
 .club-live { margin: -4px 0 8px; color: var(--warn); }
 .club-sticky { position: sticky; top: 0; z-index: 5; margin: 18px -16px 0; padding: 8px 16px; background: var(--paper); border-bottom: 1px solid var(--border); }
-.club-toc { display: flex; flex-wrap: wrap; gap: 4px 16px; }
-.club-toc button { font: 16px var(--hand); color: var(--ink); background: none; border: 0; padding: 2px 0; cursor: pointer; }
-.club-toc button:hover { text-decoration: underline; }
 .club-focus-bar { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; margin-top: 6px; padding: 6px 10px; background: var(--ink-soft); border-radius: 8px; }
 .club-focus-bar[hidden] { display: none; }
 .club-focus-bar .btn { margin-left: auto; font-size: 13px; padding: 1px 8px; }

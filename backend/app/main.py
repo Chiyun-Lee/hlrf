@@ -516,5 +516,15 @@ def feed_summaries(req: SummariesRequest) -> dict[str, Pitch]:
 
 app.include_router(club.router)  # Journal club (app/club.py): /club/cards, /club/runs
 
+class WebFiles(StaticFiles):
+    """The web/ files, sent with `Cache-Control: no-cache`: the browser revalidates them on every load (a 304 when
+    unchanged), so an edit shows on a plain reload instead of a stale cached script."""
+
+    async def get_response(self, path: str, scope) -> Response:
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 # The paper browser (../web). Mounted last so the API routes above take precedence.
-app.mount("/", StaticFiles(directory=Path(__file__).parent.parent.parent / "web", html=True), name="web")
+app.mount("/", WebFiles(directory=Path(__file__).parent.parent.parent / "web", html=True), name="web")

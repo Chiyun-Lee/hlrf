@@ -21,6 +21,7 @@ KINDS = (
 # Kinds whose input carries QUOTE[...] lines and whose output copies them; the others never see or emit quotes.
 QUOTE_KINDS = ("map", "debate_turn", "directions", "baseline", "synthesis", "hypotheses", "critique")
 PROMPT_DIR = Path(__file__).parent / "prompts"
+JUDGE_TEXT_MAX = 240_000  # characters of after-T full text in one judge prompt, shared evenly by the papers that have it
 
 
 @lru_cache(maxsize=None)
@@ -256,8 +257,9 @@ def build_baseline(agenda: str, n: int, cards: list[PaperCard]) -> str:
     return "\n".join(head + _cards_block(cards))
 
 
-def build_judge(direction: Direction, after_cards: list[PaperCard]) -> str:
-    """DIRECTION, FROM, TO, BECAUSE, AFTER_IDS, then the after-T cards only."""
+def build_judge(direction: Direction, after_cards: list[PaperCard], fulltexts: dict[str, str] | None = None) -> str:
+    """DIRECTION, FROM, TO, BECAUSE, AFTER_IDS, then the after-T cards only, each followed by its paper's full text
+    (between `<<<FULL_TEXT_BEGIN>>>` and `<<<FULL_TEXT_END>>>`, within JUDGE_TEXT_MAX) when `fulltexts` has it."""
     head = _headers(
         [
             ("DIRECTION", direction.text),
@@ -267,9 +269,13 @@ def build_judge(direction: Direction, after_cards: list[PaperCard]) -> str:
             ("AFTER_IDS", ",".join(c.id for c in after_cards)),
         ]
     )
+    texts = {c.id: fulltexts[c.id] for c in after_cards if (fulltexts or {}).get(c.id, "").strip()}
+    share = JUDGE_TEXT_MAX // max(1, len(texts))
     body: list[str] = []
     for c in after_cards:
         body += ["", f"AFTER_PAPER: {c.id}", render_card_for_prompt(c)]
+        if c.id in texts:
+            body += [f"FULL_TEXT {c.id}:", "<<<FULL_TEXT_BEGIN>>>", texts[c.id][:share], "<<<FULL_TEXT_END>>>"]
     return "\n".join(head + body)
 
 

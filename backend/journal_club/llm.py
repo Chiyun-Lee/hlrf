@@ -20,6 +20,9 @@ log = logging.getLogger(__name__)
 DEFAULT_MODEL = "claude-opus-5-5"
 DEFAULT_JUDGE_MODEL = "claude-sonnet-5-5"
 MAX_TOKENS = 16000
+# Claude Code turns per call. With no tools a turn is an answer or a retry of the JSON-schema output; the critique
+# calls of round 2 took 3-4 on a real night (arXiv protein papers), and 2 failed one with "maximum number of turns".
+AGENT_MAX_TURNS = 4
 
 HEADER_RE = re.compile(r"^([A-Z_]+): ?(.*)$", re.M)
 # Leading whitespace allowed: render_card_for_prompt indents QUOTE lines by two spaces.
@@ -199,7 +202,7 @@ class ClaudeAgentLLM:
         return ClaudeAgentOptions(
             system_prompt=system,
             model=self.model,
-            max_turns=2,
+            max_turns=AGENT_MAX_TURNS,
             tools=[],
             allowed_tools=[],
             setting_sources=[],

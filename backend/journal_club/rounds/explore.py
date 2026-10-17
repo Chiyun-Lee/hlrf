@@ -100,8 +100,9 @@ def _quotes(raw: dict) -> list[Quote]:
 
 
 def _window(events: list[Event]) -> list[Event]:
-    """Events after the last step_started that a step_done follows; else all (partial resume)."""
-    starts = [i for i, e in enumerate(events) if e.type == "step_started"]
+    """Events from the last fresh step_started (one that reused nothing) that a step_done follows; else all. A resume
+    mid-step reuses earlier reviews, so its step_started continues their window."""
+    starts = [i for i, e in enumerate(events) if e.type == "step_started" and not e.payload.get("reused")]
     if starts and any(e.type == "step_done" for e in events[starts[-1] :]):
         return events[starts[-1] :]
     return events

@@ -10,8 +10,12 @@
 // Everything drawn here is a projection of the run's events.jsonl, folded by journal_club/state.py (GET /club/runs/:name).
 
 const RELATIONS = { agree: "Agree", disagree: "Disagree", shared_limitation: "Shared limitation", unrelated: "Unrelated" };
-const STEPS = { map: "Map pairs", debate: "Debate", directions: "Directions", hypotheses: "Hypotheses", critique: "Round 2", synthesis: "Overview" };
+const STEPS = { map: "Map pairs", debate: "Debate", directions: "Directions", hypotheses: "Hypotheses", critique: "Critique", synthesis: "Overview" };
 const COUNTED = new Set(["map", "debate", "directions", "hypotheses", "critique"]); // steps whose count means something to a reader
+// The section of the run page that holds what each step made; clicking a step in the strip jumps there. Critique is
+// round 2 over the hypotheses, so it lands on them with each one's round-2 fold-out opened (data-open).
+const STEP_SECTION = { map: "pairs", debate: "disputes", directions: "directions", hypotheses: "hypotheses", critique: "hypotheses", synthesis: "overview" };
+const ROUND_2 = new Set(["critique"]); // the steps whose events carry round + 1; the overview closes the night after both
 const DECISIONS = { keep: "kept", revise: "revised", drop: "dropped" }; // the PI's call on a hypothesis after round 2
 const SOURCES = { combine: "joins agreeing papers", resolve: "settles a dispute", gap: "behind a shared limitation", extend: "pushes a result further" };
 const POINT_KINDS = { consensus: "Agreed", dissent: "Disputed", gap: "Open", direction: "Next" };
@@ -199,13 +203,13 @@ async function clubRun(name) {
   const byId = Object.fromEntries(state.cards.map((c) => [c.id, c]));
   const key = (id) => byId[id]?.citekey ?? id;
   const sections = [
-    ["overview", "Overview", overviewSection(state.synthesis, byId)],
-    ["pairs", "Pair map", pairMap(state.pairs, state.cards, key)],
-    ["directions", "Directions", directionsSection(state.directions, byId)],
-    ["hypotheses", "Hypotheses", hypothesesSection(state.hypotheses, byId, key)],
-    ["disputes", "Disputes", disputesSection(state.disputes, key)],
-    ["papers", "Papers", papersSection(state.cards)],
-  ].filter(([, , html]) => html);
+    ["overview", overviewSection(state.synthesis, byId)],
+    ["pairs", pairMap(state.pairs, state.cards, key)],
+    ["directions", directionsSection(state.directions, byId)],
+    ["hypotheses", hypothesesSection(state.hypotheses, byId, key)],
+    ["disputes", disputesSection(state.disputes, key)],
+    ["papers", papersSection(state.cards)],
+  ].filter(([, html]) => html);
   const running = summary.state === "running";
   app.innerHTML = `<div class="club-page">
     <div class="club-head">
@@ -215,7 +219,6 @@ async function clubRun(name) {
         <span class="muted small">${[esc(state.model), `${state.cards.length} papers`, running ? "" : esc(whenLine(summary))].filter(Boolean).join(" · ")}</span></div>
       <blockquote class="club-agenda-big">${esc(state.agenda)}</blockquote>
       ${summary.error ? `<div class="club-error">${esc(summary.error)}</div>` : ""}
-      ${stepsStrip(state.steps, summary.progress)}
       ${running && summary.progress ? `<p class="club-live small">${esc(liveLine(summary))}. You can leave this page; the night keeps going.</p>` : ""}
       <div class="club-chips">${state.cards.map((c) => chip(c.id, byId)).join("")}</div>
       <div class="links">
@@ -223,11 +226,11 @@ async function clubRun(name) {
         ${summary.example || running ? "" : `<button class="btn quiet" id="club-delete">Delete</button>`}
       </div>
     </div>
-    ${sections.length ? `<div class="club-sticky">
-      <nav class="club-toc">${sections.map(([id, label]) => `<button type="button" data-goto="club-${id}">${label}</button>`).join("")}</nav>
+    <div class="club-sticky">
+      ${stepsStrip(state.steps, summary.progress, new Set(sections.map(([id]) => id)))}
       <div class="club-focus-bar small" hidden></div>
-    </div>` : ""}
-    ${sections.map(([id, , html]) => `<section class="club-section" id="club-${id}">${html}</section>`).join("")}
+    </div>
+    ${sections.map(([id, html]) => `<section class="club-section" id="club-${id}">${html}</section>`).join("")}
     <p class="muted small club-rejected">${quoteCheck(state.rejected)}</p>
   </div>`;
 
@@ -245,7 +248,7 @@ async function clubRun(name) {
   applyFocus(root, byId);
   root.addEventListener("click", async (e) => {
     const goto = e.target.closest("[data-goto]");
-    if (goto) return document.getElementById(goto.dataset.goto)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (goto) return jumpTo(root, goto.dataset.goto, goto.dataset.open);
     const paper = e.target.closest("[data-paper]");
     if (paper) {
       club.focus = club.focus === paper.dataset.paper ? null : paper.dataset.paper;
@@ -278,14 +281,37 @@ function applyFocus(root, byId) {
   bar.innerHTML = f ? `<span>Showing what involves <b>${esc(byId[f]?.citekey ?? f)}</b>: ${esc(byId[f]?.title ?? "")}</span><button type="button" class="btn quiet" data-paper="${esc(f)}">Show everything</button>` : "";
 }
 
-function stepsStrip(steps, p) {
-  const items = steps
-    .filter((s) => STEPS[s.name]) // a backtest's baseline and judge steps aren't shown
-    .map((s) => {
-      const count = s.status === "running" && p?.step === s.name && p.total > 1 ? `${p.done}/${p.total}` : s.status === "done" && COUNTED.has(s.name) ? s.count : "";
-      return `<li class="${s.status}" title="${s.reused ? "rebuilt from the archive, no new calls" : s.status}"><span>${STEPS[s.name]}</span>${count !== "" ? `<b>${count}</b>` : ""}${s.status === "done" ? "<i>✓</i>" : ""}</li>`;
-    });
-  return `<ol class="club-steps">${items.join("")}</ol>`;
+// The night's steps in the order they ran, grouped by round when there is a round 2, then the overview that closes it.
+// Each step is a button to the section holding what it made (`shown`: the sections on the page); a step that hasn't
+// started, or made nothing to show, can't be clicked. Papers isn't a step: it's a plain link at the end.
+function stepsStrip(steps, p, shown) {
+  const item = (s) => {
+    const count = s.status === "running" && p?.step === s.name && p.total > 1 ? `${p.done}/${p.total}` : s.status === "done" && COUNTED.has(s.name) ? s.count : "";
+    const target = STEP_SECTION[s.name];
+    const go = s.status !== "pending" && shown.has(target) ? `data-goto="club-${target}"${ROUND_2.has(s.name) ? ` data-open="round2-"` : ""}` : "disabled";
+    const title = s.reused ? "rebuilt from the archive, no new calls" : go === "disabled" ? (s.status === "pending" ? "not started" : "nothing to show") : s.status;
+    return `<li class="${s.status}"><button type="button" ${go} title="${title}"><span>${STEPS[s.name]}</span>${count !== "" ? `<b>${count}</b>` : ""}${s.status === "done" ? "<i>✓</i>" : ""}</button></li>`;
+  };
+  const night = steps.filter((s) => STEPS[s.name]); // a backtest's baseline and judge steps aren't shown
+  const groups = [
+    ["Round 1", night.filter((s) => !ROUND_2.has(s.name) && s.name !== "synthesis")],
+    ["Round 2", night.filter((s) => ROUND_2.has(s.name))],
+    ["", night.filter((s) => s.name === "synthesis")],
+  ].filter(([, ss]) => ss.length);
+  const rounds = groups.some(([label]) => label === "Round 2"); // a night from before exploration has one round: no labels
+  return `<div class="club-strip"><nav class="club-steps">${groups
+    .map(([label, ss]) => `<div class="club-round">${rounds && label ? `<span class="club-round-label">${label}</span>` : ""}<ol>${ss.map(item).join("")}</ol></div>`)
+    .join("")}</nav>${shown.has("papers") ? `<button type="button" class="club-steps-papers" data-goto="club-papers">Papers</button>` : ""}</div>`;
+}
+
+// Scrolls a section to just under the sticky strip (whose height changes as it wraps); `open` names the data-key prefix
+// of fold-outs to open on the way, which live redraws then keep open.
+function jumpTo(root, id, open) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (open) root.querySelectorAll(`details[data-key^="${open}"]`).forEach((d) => (d.open = true));
+  const bar = root.querySelector(".club-sticky")?.offsetHeight ?? 0;
+  window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - bar - 8, behavior: "smooth" });
 }
 
 function chip(id, byId) {

@@ -19,6 +19,9 @@ LOC_RE = re.compile(r"^[^\]|\r\n]+$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 EXCERPT_MAX = 8000
 PDF_TEXT_MAX = 60_000
+# A paper's text kept beside its card as <id>.txt (save_card), for the backtest's judge: a card's abstract and seven
+# quoted sentences miss most of what a paper does (on afconf, reading the full text turned 3 of 8 misses into partials).
+FULLTEXT_MAX = 120_000
 
 
 def _one_line(s: str) -> str:
@@ -150,12 +153,20 @@ def load_cards(dir: str | Path) -> list[PaperCard]:
     return sorted(cards, key=lambda c: c.id)
 
 
-def save_card(card: PaperCard, dir: str | Path) -> Path:
-    """Write <dir>/<id>.json."""
+def save_card(card: PaperCard, dir: str | Path, fulltext: str | None = None) -> Path:
+    """Write <dir>/<id>.json, and the paper's text as <dir>/<id>.txt when given (capped at FULLTEXT_MAX)."""
     out = Path(dir) / f"{card.id}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(card.model_dump_json(indent=2), encoding="utf-8")
+    if fulltext and fulltext.strip():
+        out.with_suffix(".txt").write_text(_CONTROL_RE.sub("", fulltext)[:FULLTEXT_MAX], encoding="utf-8")
     return out
+
+
+def load_fulltexts(dir: str | Path) -> dict[str, str]:
+    """{card id: text} for every <id>.txt beside a card in dir; cards without one are left out."""
+    ids = {p.stem for p in Path(dir).glob("*.json")}
+    return {p.stem: p.read_text(encoding="utf-8") for p in sorted(Path(dir).glob("*.txt")) if p.stem in ids}
 
 
 # ------------------------------------------------------------------ rendering
@@ -192,16 +203,16 @@ def render_card_for_prompt(card: PaperCard) -> str:
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
-def extract_pdf_text(path: str | Path) -> str:
-    """Concatenate page texts, strip control chars, cap at PDF_TEXT_MAX."""
+def extract_pdf_text(path: str | Path, cap: int = PDF_TEXT_MAX) -> str:
+    """Concatenate page texts, strip control chars, cap at `cap` (PDF_TEXT_MAX for ingest, FULLTEXT_MAX to keep)."""
     import pymupdf
 
     with pymupdf.open(str(path)) as doc:
         text = "\n\n".join(page.get_text() for page in doc)
     text = _CONTROL_RE.sub("", text)
-    if len(text) > PDF_TEXT_MAX:
-        log.warning("ingest: %s truncated from %d to %d chars", path, len(text), PDF_TEXT_MAX)
-        text = text[:PDF_TEXT_MAX]
+    if len(text) > cap:
+        log.warning("ingest: %s truncated from %d to %d chars", path, len(text), cap)
+        text = text[:cap]
     return text
 
 

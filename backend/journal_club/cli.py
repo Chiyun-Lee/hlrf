@@ -77,7 +77,7 @@ def ingest(
     from pydantic import ValidationError
     import pymupdf
 
-    from journal_club.cards import ingest_pdf, save_card
+    from journal_club.cards import FULLTEXT_MAX, extract_pdf_text, ingest_pdf, save_card
     from journal_club.llm import get_llm
 
     def go() -> None:
@@ -88,7 +88,7 @@ def ingest(
         failed: list[str] = []
         for pdf in pdfs:
             try:
-                out = save_card(ingest_pdf(pdf, llm), cards_dir)
+                out = save_card(ingest_pdf(pdf, llm), cards_dir, fulltext=extract_pdf_text(pdf, cap=FULLTEXT_MAX))
             except (*FAILURES, ValidationError, pymupdf.FileDataError, RuntimeError) as exc:
                 log.error("ingest: %s skipped: %s: %s", pdf.name, type(exc).__name__, exc)
                 failed.append(pdf.name)
@@ -130,22 +130,24 @@ def backtest(
     out: Out,
     agenda: Agenda,
     resume: Resume = False,
+    explore: Annotated[bool, typer.Option("--explore", help="The club's night also proposes and tests hypotheses (not judged).")] = False,
+    baseline: Annotated[bool, typer.Option("--baseline/--no-baseline", help="Run and judge the one-call baseline too.")] = True,
 ) -> None:
     """Split CARDS_DIR at T, run club and baseline on before-T, judge on after-T, write report.md."""
     from journal_club.backtest import run_backtest
-    from journal_club.cards import load_cards
+    from journal_club.cards import load_cards, load_fulltexts
     from journal_club.llm import get_llm
     from journal_club.minutes import write_minutes
 
     def go() -> None:
         cards = load_cards(cards_dir)
         with _open_archive(out, resume) as archive:
-            report = run_backtest(cards, t, get_llm(), archive, agenda)
+            report = run_backtest(
+                cards, t, get_llm(), archive, agenda, explore=explore, with_baseline=baseline, fulltexts=load_fulltexts(cards_dir)
+            )
             write_minutes(archive, cards, out / "minutes.md")
-        typer.echo(
-            f"club {report.club_rate:.2f} ({len(report.club_hits)} judged) vs baseline "
-            f"{report.baseline_rate:.2f} ({len(report.baseline_hits)} judged) -> {out / 'report.md'}"
-        )
+        versus = f" vs baseline {report.baseline_rate:.2f} ({len(report.baseline_hits)} judged)" if baseline else " (no baseline)"
+        typer.echo(f"club {report.club_rate:.2f} ({len(report.club_hits)} judged){versus} -> {out / 'report.md'}")
 
     _guarded(go)
 

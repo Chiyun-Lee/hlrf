@@ -156,3 +156,40 @@ def test_matches_play_every_pair_once_alternating_sides() -> None:
     assert sorted(tuple(sorted(p)) for p in pairs) == sorted(itertools.combinations(items, 2))
     firsts = [p[0] for p in pairs]
     assert len(set(firsts)) > 1 and firsts.count("a") < 3  # "a" isn't shown first in all its matches
+
+
+def test_club_only_backtest_explores_without_a_baseline(cards: list[PaperCard], tmp_archive: Archive) -> None:
+    """`jc backtest --explore --no-baseline`: the before-T night explores, only its directions are judged."""
+    from journal_club.backtest import run_backtest
+
+    llm, judge = CountingLLM(MockLLM()), CountingLLM(MockLLM())
+    report = run_backtest(cards, "2023-01-01", llm, tmp_archive, AGENDA, judge_llm=judge, explore=True, with_baseline=False)
+    assert "baseline" not in llm.calls and llm.calls["hypotheses"] == 1 and llm.calls["compare"] > 0
+    assert report.baseline is False and report.baseline_hits == [] and judge.calls["judge"] == len(report.club_directions)
+    text = (Path(tmp_archive.path).parent / "report.md").read_text()
+    assert "## Club" in text and "## Baseline" not in text and "No baseline" in text
+    steps = [s.name for s in fold(tmp_archive.read()).steps]
+    assert steps == ["map", "debate", "directions", "hypotheses", "critique", "synthesis", "judge"]
+
+
+def test_page_keeps_items_from_before_a_resume(cards: list[PaperCard], tmp_path: Path, monkeypatch) -> None:
+    """A night that crashed mid-debate and mid-round-2 shows every dispute and review it used, not just the last
+    attempt's (the afconf rerun showed 4 of 5 disputes and 3 of 6 reviews)."""
+    monkeypatch.setenv("JC_CONCURRENCY", "1")
+    path = tmp_path / "events.jsonl"
+    for kind in ("debate_verdict", "revise"):
+        seen = itertools.count()
+
+        def flaky(user: str, kind: str = kind, seen=seen) -> dict:
+            if next(seen) == 1:
+                raise RuntimeError("network")
+            return MockLLM().default(kind, user, prompts.SCHEMAS[kind])
+
+        with Archive(path) as archive, pytest.raises(RuntimeError):
+            run_night(cards, MockLLM(scripted={kind: flaky}), archive, AGENDA)
+    with Archive(path) as archive:
+        result = run_night(cards, MockLLM(), archive, AGENDA)
+        events = archive.read()
+    state = fold(events)
+    assert len(state.disputes) == len(result.disputes) and all(h["decision"] for h in state.hypotheses)
+    assert state.hypotheses == [r.model_dump() for r in result.hypotheses]

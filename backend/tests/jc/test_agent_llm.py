@@ -6,7 +6,7 @@ import os
 
 import pytest
 
-from journal_club.llm import CachedLLM, ClaudeAgentLLM, LLMError, default_backend, get_llm
+from journal_club.llm import AGENT_MAX_TURNS, CachedLLM, ClaudeAgentLLM, LLMError, default_backend, get_llm
 
 
 def test_default_backend_prefers_agent_without_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -25,7 +25,7 @@ def test_get_llm_agent_is_cached_and_isolated(monkeypatch: pytest.MonkeyPatch, t
     assert llm.model == "claude-opus-5-5"
     opts = llm.inner._options("SYS", {"type": "object", "properties": {}, "additionalProperties": False})
     assert opts.tools == [] and opts.allowed_tools == [] and opts.setting_sources == []
-    assert opts.permission_mode == "dontAsk" and opts.max_turns == 2
+    assert opts.permission_mode == "dontAsk" and opts.max_turns == AGENT_MAX_TURNS
     assert opts.output_format["type"] == "json_schema"
     assert opts.cwd and os.path.isdir(opts.cwd)
 

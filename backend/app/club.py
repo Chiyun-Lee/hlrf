@@ -32,7 +32,7 @@ from .schemas import Paper
 
 import journal_club
 from journal_club.archive import Event
-from journal_club.cards import PaperCard, ingest_text, load_cards, sanitise_id, save_card
+from journal_club.cards import PaperCard, ingest_text, load_cards, load_fulltexts, sanitise_id, save_card
 from journal_club.llm import default_backend
 from journal_club.night import run_night
 from journal_club.rounds.explore import CRITICS
@@ -223,10 +223,15 @@ class CardSetRequest(BaseModel):
     paper_ids: list[int] = Field(min_length=1, max_length=MAX_PAPERS)  # library papers
 
 
+def paper_text(paper: Paper) -> str:
+    """A library paper's text, page by page; kept beside its card (<id>.txt) for the backtest's judge."""
+    return "\n\n".join(b.text for page in paper.pages for b in page.blocks)
+
+
 def card_from_paper(paper_id: int, paper: Paper, model) -> PaperCard:
     """A library paper's text through the club's ingest (one Claude call, quote-gated). Its id is its arXiv id when it
     has one, as a card id (2503.14738 -> 2503_14738)."""
-    text = "\n\n".join(b.text for page in paper.pages for b in page.blocks)
+    text = paper_text(paper)
     if not text.strip():
         raise ValueError("the paper has no text")
     return ingest_text(text, sanitise_id(paper.arxiv_id or f"paper{paper_id}"), str(paper.year or ""), model, source=paper.title)
@@ -263,7 +268,7 @@ class Ingest:
 
     def ingest_one(self, pid: int, paper: Paper, model) -> None:
         try:
-            save_card(card_from_paper(pid, paper, model), self.dir)
+            save_card(card_from_paper(pid, paper, model), self.dir, fulltext=paper_text(paper))
         except Exception as e:
             log.exception("card set %s: paper %s failed", self.name, pid)
             with self.lock:
@@ -350,7 +355,7 @@ class Runner:
                 if self.req.kind == "night":
                     run_night(cards, model, archive, self.req.agenda)
                 else:
-                    run_backtest(cards, self.req.t, model, archive, self.req.agenda)
+                    run_backtest(cards, self.req.t, model, archive, self.req.agenda, fulltexts=load_fulltexts(self.cards_dir))
                 write_minutes(archive, cards, self.dir / "minutes.md")
         except Exception as e:
             log.exception("run %s failed", self.req.name)

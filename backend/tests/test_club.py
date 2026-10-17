@@ -124,6 +124,8 @@ def test_card_set_from_library() -> None:
     sets = {s["name"]: s for s in client.get("/club/cards").json()}
     assert sets["mine"]["ingesting"] == {"done": 1, "total": 1, "failed": [], "running": False}
     assert [p["id"] for p in sets["mine"]["papers"]] == ["2101_00001"] and sets["mine"]["papers"][0]["year"] == 2021
+    kept = (club.CLUB_DIR / "cards" / "mine" / "2101_00001.txt").read_text()  # the full text, for a backtest's judge
+    assert all(line in kept for line in LINES)
     assert client.post("/club/cards", json={"name": "mine", "paper_ids": [pid]}).status_code == 409
     assert client.post("/club/cards", json={"name": "m2", "paper_ids": [999999]}).status_code == 404
     assert client.post("/club/cards", json={"name": "m3", "paper_ids": []}).status_code == 422
