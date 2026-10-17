@@ -128,7 +128,7 @@ def post_feedback(arxiv_id: str, req: FeedbackRequest) -> dict:
 
 
 class MineRequest(BaseModel):
-    text: str  # arXiv ids or links, or an INSPIRE or Google Scholar profile link
+    text: str  # arXiv ids or links, or an INSPIRE profile link
 
 
 @app.post("/feed/mine")

@@ -108,35 +108,3 @@ def by_ids(ids: list[str]) -> list[ArxivPaper]:
     resp = http.get(API, params={"id_list": ",".join(ids), "max_results": len(ids)})
     resp.raise_for_status()
     return parse(resp.content)
-
-
-def by_titles(titles: list[str]) -> list[tuple[str, ArxivPaper]]:
-    """(title, paper) for each title that matches a paper on arXiv. Searches each title's most distinctive words,
-    ten titles per request, then compares whole titles, ignoring case, punctuation and LaTeX."""
-    found = []
-    for start in range(0, len(titles), 10):
-        if start:
-            time.sleep(3)  # arXiv asks API clients to wait three seconds between requests
-        batch = titles[start : start + 10]
-        clauses = [" AND ".join(f"ti:{w}" for w in sorted(words(t), key=len, reverse=True)[:6]) for t in batch]
-        q = " OR ".join(f"({c})" for c in clauses if c)
-        if not q:
-            continue
-        resp = http.get(API, params={"search_query": q, "max_results": 100})
-        resp.raise_for_status()
-        candidates = parse(resp.content)
-        for title in batch:
-            if match := next((p for p in candidates if same_title(title, p.title)), None):
-                found.append((title, match))
-    return found
-
-
-def words(title: str) -> list[str]:
-    """Plain words of a title, without LaTeX: "$\\texttt{SwiftC}_\\ell$: fast ..." -> ["fast", ...]."""
-    return re.findall(r"[a-z0-9]+", re.sub(r"\$[^$]*\$", " ", title).lower())
-
-
-def same_title(a: str, b: str) -> bool:
-    x, y = " ".join(words(a)), " ".join(words(b))
-    shorter, longer = sorted((x, y), key=len)
-    return bool(shorter) and (x == y or (len(shorter) >= 30 and shorter in longer))

@@ -344,12 +344,12 @@ function minePanel(mine, profiles) {
       <p class="fy-mine-help">${
         mine.length
           ? "For you ranks each day’s papers and writes “Why you’d care” from these, plus what you like and save."
-          : "Paste your INSPIRE or Google Scholar profile link and For you loads your papers, then ranks each day’s papers by your work and says why each one matters to you. arXiv ids or links work too."
+          : "Paste your INSPIRE profile link and For you loads your papers, then ranks each day’s papers by your work and says why each one matters to you. arXiv ids or links work too."
       }</p>
       ${linked}
       ${list}
       <form class="fy-mine-add">
-        <input name="text" placeholder="inspirehep.net/authors/…, scholar.google.com/citations?user=…, or 2207.01501" aria-label="Your INSPIRE or Google Scholar profile link, or arXiv ids" autocomplete="off" />
+        <input name="text" placeholder="inspirehep.net/authors/…, or arXiv ids like 2207.01501" aria-label="Your INSPIRE profile link, or arXiv ids" autocomplete="off" />
         <button type="submit" class="fy-btn fy-primary">Add papers</button>
       </form>
       <p class="fy-mine-msg" role="status">${esc(mineFlash ?? "")}</p>
@@ -365,9 +365,7 @@ function wireMine(root) {
     const button = e.target.querySelector("button");
     button.disabled = true;
     const text = e.target.text.value;
-    message.textContent = /inspirehep|scholar\.google/i.test(text)
-      ? "Reading your profile and finding its papers on arXiv… (Google Scholar can take half a minute)"
-      : "Looking them up on arXiv…";
+    message.textContent = /inspirehep/i.test(text) ? "Reading your INSPIRE profile…" : "Looking them up on arXiv…";
     try {
       const res = await api("/feed/mine", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ text }) });
       const notes = [];

@@ -1,8 +1,8 @@
 """For you: each day's new arXiv papers in your categories, ranked for you, with a daily goal and a streak.
 
 Papers come straight from the arXiv API (app/arxiv.py), at most once an hour; the ranking is app/ranker.py. It learns
-from your own papers ("Your papers" in the tab: arXiv ids, or an INSPIRE or Google Scholar profile, app/profiles.py,
-re-checked daily), More like this / Not for me, the papers you open, and every library paper that's on arXiv.
+from your own papers ("Your papers" in the tab: arXiv ids, or an INSPIRE profile, app/profiles.py, re-checked
+daily), More like this / Not for me, the papers you open, and every library paper that's on arXiv.
 Set FEED_CATEGORIES in backend/.env to follow other categories (default astro-ph.CO).
 """
 
@@ -144,8 +144,8 @@ def feedback(paper_id: str, kind: str) -> dict:
 
 
 def add_mine(text: str) -> dict:
-    """Add your own papers: arXiv ids or links, or an INSPIRE or Google Scholar profile link, which is then
-    re-checked daily for new papers. Returns which were found."""
+    """Add your own papers: arXiv ids or links, or an INSPIRE profile link, which is then re-checked daily for new
+    papers. Returns which were found."""
     ids = ids_in(text)
     profile = profiles.find(text)
     from_profile, off_arxiv = [], 0
@@ -160,7 +160,7 @@ def add_mine(text: str) -> dict:
             "bad_request",
             f"None of the papers on your {profiles.label(profile)} profile are on arXiv."
             if profile
-            else "Nothing to add. Paste arXiv ids or links, or your INSPIRE or Google Scholar profile link.",
+            else "Nothing to add. Paste your INSPIRE profile link, or arXiv ids or links.",
         )
     removed = set(json.loads(db.get_meta("mine_removed") or "[]"))
     db.set_meta("mine_removed", json.dumps(sorted(removed - set(ids))))  # pasting an id again brings it back

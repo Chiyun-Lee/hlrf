@@ -174,7 +174,6 @@ def test_saving_a_paper_still_works(monkeypatch):
 from app import profiles  # noqa: E402
 
 INSPIRE_URL = "https://inspirehep.net/authors/1960608"
-SCHOLAR_URL = "https://scholar.google.com/citations?hl=en&user=AbC-12_xyzAAAAJ"
 
 
 def fake_get(responses):
@@ -196,7 +195,6 @@ def inspire_hits(*ids):
 
 def test_profile_links_are_recognised():
     assert profiles.find(f"my profile: {INSPIRE_URL}?ui-citation-summary=true") == {"kind": "inspire", "id": "1960608", "url": INSPIRE_URL}
-    assert profiles.find(SCHOLAR_URL)["id"] == "AbC-12_xyzAAAAJ"
     assert profiles.find("2207.01501") is None
 
 
@@ -211,22 +209,6 @@ def test_inspire_profile_loads_your_papers(fresh, monkeypatch):
     assert data["method"] == "model" and data["profiles"] == [{"url": INSPIRE_URL, "label": "INSPIRE"}]
 
 
-def test_scholar_profile_matches_titles_on_arxiv(fresh, monkeypatch):
-    page = '<table><tr><td><a class="gsc_a_at" href="#">Galaxy power spectrum constraints</a></td></tr>' \
-           '<tr><td><a class="gsc_a_at" href="#">My PhD thesis</a></td></tr></table>'
-    get, asked = fake_get({"https://scholar.google.com/citations": (200, page)})
-    monkeypatch.setattr(profiles.http, "get", get)
-    monkeypatch.setattr(arxiv, "by_titles", lambda titles: [(titles[0], MINE[0])])
-    res = client.post("/feed/mine", json={"text": SCHOLAR_URL}).json()
-    assert (res["added"], res["profile"], res["off_arxiv"]) == (["2207.01500"], "Google Scholar", 1)
-    assert "cstart" not in asked[0][1]  # Scholar's robots.txt allows profile pages, not paging through them
-
-
-def test_blocked_scholar_explains(fresh, monkeypatch):
-    get, _ = fake_get({"https://scholar.google.com/citations": (429, "Our systems have detected unusual traffic")})
-    monkeypatch.setattr(profiles.http, "get", get)
-    response = client.post("/feed/mine", json={"text": SCHOLAR_URL})
-    assert response.status_code == 503 and "INSPIRE" in response.json()["detail"]["message"]
 
 
 def test_daily_sync_adds_new_papers_but_not_removed_ones(fresh, monkeypatch):

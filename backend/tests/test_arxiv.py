@@ -43,12 +43,3 @@ def test_listing_date_follows_the_14h_eastern_deadline(submitted_utc, expected):
 def test_query():
     q = query(["astro-ph.CO", "gr-qc"], date(2026, 10, 14), date(2026, 10, 16))
     assert q == "(cat:astro-ph.CO OR cat:gr-qc) AND submittedDate:[202610140000 TO 202610162359]"
-
-
-def test_titles_match_across_latex_and_punctuation():
-    from app.arxiv import same_title, words
-
-    assert words("$\\texttt{SwiftC}_\\ell$: fast differentiable") == ["fast", "differentiable"]
-    assert same_title("SwiftCℓ: fast differentiable angular power spectra beyond Limber", "$\\texttt{SwiftC}_\\ell$: fast differentiable angular power spectra beyond Limber")
-    assert same_title("Restoring concordance with early dark energy?", "Restoring Concordance with Early Dark Energy")
-    assert not same_title("Dark energy", "Dark energy and massive neutrinos in the CMB")  # too short to count as contained
