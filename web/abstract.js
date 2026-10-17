@@ -16,7 +16,7 @@ async function showAbstract(paperId, paperTitle, { make = false, onReady } = {})
   const overlay = openOverlay(`<p class="overlay-status">${make ? "Reading every page and drawing your graphical abstract… (about a minute)" : "Loading…"}</p>`);
   let a;
   try {
-    a = make ? await api(`/papers/${paperId}/abstract`, { method: "POST" }) : await api(`/papers/${paperId}/abstract`);
+    a = await api(atLevel(`/papers/${paperId}/abstract`), make ? { method: "POST" } : undefined);
     await document.fonts.load('20px "xkcd"');
   } catch (e) {
     overlay.querySelector(".overlay-status").textContent = `Couldn't make the abstract: ${e.message}`;

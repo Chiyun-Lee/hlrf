@@ -7,7 +7,7 @@ import re
 
 import pymupdf
 
-from . import llm, memory
+from . import levels, llm, memory
 from .schemas import Mark, PageSummary, Paper
 
 MODEL = os.environ.get("SUMMARY_MODEL", "claude-opus-5-5")
@@ -17,10 +17,9 @@ IMAGE_DPI = 110  # enough to read a plot and point at things in it; about 1.5k t
 GRID = 100  # spacing in pixels of the faint coordinate grid on page images
 EFFORT = os.environ.get("SUMMARY_EFFORT", "low")
 
-SYSTEM = """You annotate one page of a research paper so a curious non-expert can follow it, in the style of Claire
-Lamman's doodle summaries: warm, plain, everyday language, a little playful, with concrete analogies ("The Universe is
-like old milk: it started out smooth and got clumpier over time"), but without glossing over the methods. Keep the
-real numbers, names and key terms; never add claims the text doesn't make.
+SYSTEM = """You annotate one page of a research paper in the style of Claire Lamman's doodle summaries: short,
+warm, a little playful handwritten notes, pitched at the reader described at the end. Keep the real numbers, names
+and key terms; never add claims the text doesn't make.
 
 You get the page's text blocks, numbered, with the column each sits in when the page has two. Group them into a
 few big notes (usually 1-4 per page) by meaning, not position: a note covers everything under one section or
@@ -31,15 +30,15 @@ Every block belongs to at most one note. Notes come in three kinds:
   a large handwritten font, so they must be much shorter than it.
 - figure: one per figure or table, covering only its caption block(s): the figure itself must stay visible, so never
   cover text from inside it (axis labels, panel letters, words in a diagram). `heading`: "FIG 2: " plus a playful
-  title. `bullets`: 1-3 plain-words callouts, the way Lamman scribbles next to a plot ("This is a fancy way of showing
+  title. `bullets`: 1-3 short callouts, the way Lamman scribbles next to a plot ("This is a fancy way of showing
   that the measurements are not mixed up with each other"). When you get an image of the page, read the figure
-  itself, not just its caption: what is plotted against what (axes in plain words), what to look at (the trend, the
+  itself, not just its caption: what is plotted against what (the axes, in the reader's terms), what to look at (the trend, the
   gap between curves, the outlier, the highlighted panel) and what it tells us.
   `marks`: with the page image, also doodle on the figure itself like Lamman does: 2-4 marks pointing at the
   features that matter. shape "circle" rings a feature (a peak, a cluster, the key panel, a band on a gel); shape
   "arrow" points at one from the note. `box`: [x0, y0, x1, y1] tightly around the feature, `text_at`: [x, y], the
   centre of the note, in nearby empty space (margins, white gaps; never over data or other text), all in pixels of
-  the page image (its size is given below; the faint blue grid lines are every 100 px). `text`: at most 6 plain,
+  the page image (its size is given below; the faint blue grid lines are every 100 px). `text`: at most 6
   playful words ("the big jump!", "only works in pairs").
 - aside: anything that isn't the science, which the reader blurs out so people can focus: funding, acknowledgements,
   author contributions, declaration/competing interests, data and code availability, ethics statements, author lists,
@@ -49,8 +48,8 @@ Leave uncovered: running headers, page numbers, display equations and tiny fragm
 Text continuing from the previous page belongs with whatever it is part of: summarise the part on this page."""
 
 
-def summarize_page(paper: Paper, index: int, pdf: bytes | None = None) -> PageSummary:
-    """`pdf`: the paper's PDF, if we have it; pages with figures are then also sent as an image so Claude can read them."""
+def summarize_page(paper: Paper, index: int, level: str, pdf: bytes | None = None) -> PageSummary:
+    """`level`: who the notes are for (app/levels.py). `pdf`: the paper's PDF, if we have it; pages with figures are then also sent as an image so Claude can read them."""
     page = paper.pages[index]
     if not page.blocks:  # e.g. a full-page figure
         return PageSummary(notes=[])
@@ -63,7 +62,7 @@ def summarize_page(paper: Paper, index: int, pdf: bytes | None = None) -> PageSu
         png, (w, h) = page_image(pdf, index, grid=True)
         image = {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": png}}
         prompt = [image, {"type": "text", "text": f"The page image is {w} x {h} px.\n\n{prompt}"}]
-    summary = llm.ask(PageSummary, SYSTEM, prompt, MODEL, EFFORT)
+    summary = llm.ask(PageSummary, f"{SYSTEM}\n\n{levels.for_prompt(level)}", prompt, MODEL, EFFORT)
     # Keep valid block indices, each block in at most one note.
     used = set()
     for n in summary.notes:

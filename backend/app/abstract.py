@@ -9,7 +9,7 @@ from collections import Counter
 
 import pymupdf
 
-from . import llm
+from . import levels, llm
 from .schemas import GraphicalAbstract, Mark, PageSummary, Paper
 from .summarize import FIGURE, parse_note_id
 
@@ -24,8 +24,8 @@ MIN_INK = 0.03  # ...and isn't blank
 log = logging.getLogger(__name__)
 
 SYSTEM = """You turn a research paper's reading notes into a graphical abstract: one slide that jogs the memory of
-someone who has just read the paper. Keep the voice of the notes (plain, warm, a little playful, in the style of
-Claire Lamman's doodle summaries) and keep real numbers and names.
+someone who has just read the paper. Keep the voice of the notes (warm, a little playful, in the style of Claire
+Lamman's doodle summaries, pitched at the reader described at the end) and keep real numbers and names.
 
 - title: a short playful title for the whole paper (at most 8 words).
 - takeaway: the one thing to remember, in one sentence (under ~20 words).
@@ -38,7 +38,7 @@ Claire Lamman's doodle summaries) and keep real numbers and names.
   none."""
 
 
-def make(paper: Paper, summaries: list[PageSummary], pdf: bytes | None) -> GraphicalAbstract:
+def make(paper: Paper, summaries: list[PageSummary], pdf: bytes | None, level: str) -> GraphicalAbstract:
     notes = []
     for p, summary in enumerate(summaries):
         for k, n in enumerate(summary.notes):
@@ -47,7 +47,7 @@ def make(paper: Paper, summaries: list[PageSummary], pdf: bytes | None) -> Graph
             label = f"[figure p{p}n{k}]" if n.kind == "figure" else "[section]"
             notes.append(f"{label} {n.heading or ''}\n" + "\n".join(f"- {b}" for b in n.bullets))
     prompt = f"Paper: {paper.title}\n\nNotes, in reading order:\n\n" + "\n\n".join(notes)
-    abstract = llm.ask(GraphicalAbstract, SYSTEM, prompt, MODEL, EFFORT)
+    abstract = llm.ask(GraphicalAbstract, f"{SYSTEM}\n\n{levels.for_prompt(level)}", prompt, MODEL, EFFORT)
 
     abstract.flow, abstract.bullets = abstract.flow[:6], abstract.bullets[:5]
     if not abstract.flow:

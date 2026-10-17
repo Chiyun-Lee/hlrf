@@ -7,7 +7,7 @@ async function startQuiz(paperId) {
   overlay.classList.add("quiz-overlay");
   let questions;
   try {
-    ({ questions } = await api(`/papers/${paperId}/quiz`, { method: "POST" }));
+    ({ questions } = await api(atLevel(`/papers/${paperId}/quiz`), { method: "POST" }));
   } catch (e) {
     overlay.querySelector(".overlay-status").textContent = `Couldn't make a quiz: ${e.message}`;
     return;
@@ -52,7 +52,7 @@ async function startQuiz(paperId) {
         ? `<b>Nice!</b> ${esc(q.explanation)}`
         : `<b>Not quite: it's “${esc(q.options[q.answer])}”.</b> ${esc(q.explanation)}`;
       if (q.proof) {
-        q.proofText ??= api(`/papers/${paperId}/proof`, {
+        q.proofText ??= api(atLevel(`/papers/${paperId}/proof`), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ proof: q.proof, question: q.prompt, answer: q.options[q.answer], explanation: q.explanation }),

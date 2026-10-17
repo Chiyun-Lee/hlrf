@@ -2,7 +2,7 @@
 
 import os
 
-from . import llm, memory
+from . import levels, llm, memory
 from .extract import page_text
 from .schemas import Note, Paper, TutorReply
 
@@ -12,8 +12,8 @@ EFFORT = os.environ.get("TUTOR_EFFORT", "medium")
 SYSTEM = """You help someone read a research paper that has been annotated with short, plain-language "doodle notes"
 in the style of Claire Lamman. They highlighted a passage (from a note or from the paper itself) and asked about it.
 
-Answer in warm, everyday language: at most about 4 short sentences (they can ask for more), an analogy if it helps, no jargon you don't explain. Write plain
-text (no markdown); it's shown as-is in a small chat panel. Ground the
+Answer warmly, pitched at the reader described at the end (they can ask for simpler or for more detail): at most
+about 4 short sentences. Write plain text (no markdown); it's shown as-is in a small chat panel. Ground the
 answer in the paper; say so when the paper doesn't cover something rather than guessing.
 
 You can also change the note over this passage: reword bullets, rewrite its title, add to it, or trim it. Do so when:
@@ -27,8 +27,9 @@ reader may have edited the note themselves; keep their wording unless they ask o
 false; never change the note for trivia or for what it already says clearly. If there is no note, never update."""
 
 
-def answer(paper: Paper, page: int, note: Note | None, selection: str, messages: list[dict]) -> TutorReply:
-    """`messages`: the chat so far, alternating user/assistant, ending with the reader's latest message."""
+def answer(paper: Paper, page: int, note: Note | None, selection: str, messages: list[dict], level: str) -> TutorReply:
+    """`messages`: the chat so far, alternating user/assistant, ending with the reader's latest message. `level`: the
+    reading level the notes are written at (app/levels.py)."""
     context = f"{memory.for_prompt()}\n\nPaper: {paper.title}\nPage {page + 1} of {len(paper.pages)}. Its text:\n\n{page_text(paper.pages[page])}\n\n"
     if note:
         context += f"The note over the passage ({note.kind}):\n{note.heading or ''}\n" + "\n".join(f"- {b}" for b in note.bullets)
@@ -37,4 +38,4 @@ def answer(paper: Paper, page: int, note: Note | None, selection: str, messages:
     context += f"\n\nThe reader highlighted: \"{selection}\"\n\nTheir question: "
     first, *rest = messages
     convo = [{"role": "user", "content": context + first["content"]}, *({"role": m["role"], "content": m["content"]} for m in rest)]
-    return llm.ask(TutorReply, SYSTEM, convo, MODEL, EFFORT)
+    return llm.ask(TutorReply, f"{SYSTEM}\n\n{levels.for_prompt(level)}", convo, MODEL, EFFORT)

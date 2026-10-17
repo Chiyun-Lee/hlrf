@@ -2,7 +2,7 @@
 
 import os
 
-from . import llm, memory
+from . import levels, llm, memory
 from .schemas import GraphicalAbstract, Note, PageSummary, Paper, Quiz
 from .summarize import parse_note_id
 
@@ -17,12 +17,13 @@ plain-language notes. Write 8 questions, in roughly the order of the paper, mixi
 Test understanding of the question, the approach, the findings and why they matter, not trivia (no author names,
 page numbers or exact decimals unless they are the point). Wrong options must be plausible. Keep it light and in the
 voice of the notes; prompts under ~25 words, options under ~8 words. `answer` is the index of the right option.
-If you're told what the reader struggles with, aim a couple of questions at those spots (gently).
+Pitch the questions to the reader described at the end (an expert gets sharper questions on methods, results and
+caveats). If you're told what the reader struggles with, aim a couple of questions at those spots (gently).
 `explanation`: one friendly line saying why the answer is right. `proof`: the id of the note (e.g. "p3n1") whose
 content backs up the answer, so the reader can check it against the paper."""
 
 
-def make(paper: Paper, summaries: list[PageSummary], abstract: GraphicalAbstract) -> Quiz:
+def make(paper: Paper, summaries: list[PageSummary], abstract: GraphicalAbstract, level: str) -> Quiz:
     notes = [
         f"[p{p}n{k}] {n.heading or ''}\n" + "\n".join(f"- {b}" for b in n.bullets)
         for p, s in enumerate(summaries)
@@ -33,7 +34,7 @@ def make(paper: Paper, summaries: list[PageSummary], abstract: GraphicalAbstract
         f"{memory.for_prompt()}\n\nPaper: {paper.title}\n\nGraphical abstract:\n{abstract.model_dump_json(exclude={'figures': {'__all__': {'image'}}})}"
         f"\n\nNotes:\n\n" + "\n\n".join(notes)
     )
-    quiz = llm.ask(Quiz, SYSTEM, prompt, MODEL, EFFORT)
+    quiz = llm.ask(Quiz, f"{SYSTEM}\n\n{levels.for_prompt(level)}", prompt, MODEL, EFFORT)
     quiz.questions = [q for q in quiz.questions if 0 <= q.answer < len(q.options)]
     for q in quiz.questions:  # drop proofs pointing at notes that don't exist
         if q.proof and not note_by_id(summaries, q.proof):

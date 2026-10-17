@@ -1,4 +1,5 @@
-"""SQLite storage: one row per paper (the record as JSON, plus the PDF when we have it) and cached page summaries."""
+"""SQLite storage: one row per paper (the record as JSON, plus the PDF when we have it), and page summaries and
+graphical abstracts cached per reading level (app/levels.py)."""
 
 import os
 import sqlite3
@@ -18,8 +19,23 @@ lock = threading.Lock()  # FastAPI runs endpoints in threads; serialise access t
 conn.execute("CREATE TABLE IF NOT EXISTS papers (id INTEGER PRIMARY KEY, url TEXT, title TEXT, doi TEXT, data TEXT, pdf BLOB)")
 if "pdf" not in [col[1] for col in conn.execute("PRAGMA table_info(papers)")]:  # databases from before PDFs were kept
     conn.execute("ALTER TABLE papers ADD COLUMN pdf BLOB")
-conn.execute("CREATE TABLE IF NOT EXISTS summaries (paper_id INTEGER, page INTEGER, data TEXT, PRIMARY KEY (paper_id, page))")
-conn.execute("CREATE TABLE IF NOT EXISTS abstracts (paper_id INTEGER PRIMARY KEY, data TEXT)")
+
+
+def leveled_table(name: str, create: str) -> None:
+    """Create a table keyed by reading level. Tables from before levels existed are moved over: their notes were
+    written for lay readers, so they become the outreach level."""
+    columns = [col[1] for col in conn.execute(f"PRAGMA table_info({name})")]
+    with conn:
+        if columns and "level" not in columns:
+            conn.execute(f"ALTER TABLE {name} RENAME TO {name}_old")
+            conn.execute(create)
+            conn.execute(f"INSERT INTO {name} SELECT *, 'outreach' FROM {name}_old")
+            conn.execute(f"DROP TABLE {name}_old")
+        conn.execute(create)
+
+
+leveled_table("summaries", "CREATE TABLE IF NOT EXISTS summaries (paper_id INTEGER, page INTEGER, data TEXT, level TEXT, PRIMARY KEY (paper_id, page, level))")
+leveled_table("abstracts", "CREATE TABLE IF NOT EXISTS abstracts (paper_id INTEGER, data TEXT, level TEXT, PRIMARY KEY (paper_id, level))")
 # Learning memory (app/memory.py): what the reader did, and the profile distilled from it. One reader per install.
 conn.execute("CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, paper_id INTEGER, kind TEXT, data TEXT, created TEXT DEFAULT CURRENT_TIMESTAMP)")
 conn.execute("CREATE TABLE IF NOT EXISTS profile (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT)")
@@ -65,29 +81,43 @@ def delete(paper_id: int) -> bool:
     return cur.rowcount > 0
 
 
-def get_summary(paper_id: int, page: int) -> PageSummary | None:
+def get_summary(paper_id: int, page: int, level: str) -> PageSummary | None:
     with lock:
-        row = conn.execute("SELECT data FROM summaries WHERE paper_id = ? AND page = ?", (paper_id, page)).fetchone()
+        row = conn.execute(
+            "SELECT data FROM summaries WHERE paper_id = ? AND page = ? AND level = ?", (paper_id, page, level)
+        ).fetchone()
     try:
         return PageSummary.model_validate_json(row[0]) if row else None
     except ValidationError:  # cached in an older format; regenerate
         return None
 
 
-def save_summary(paper_id: int, page: int, summary: PageSummary) -> None:
+def save_summary(paper_id: int, page: int, level: str, summary: PageSummary) -> None:
     with lock, conn:
-        conn.execute("INSERT OR REPLACE INTO summaries VALUES (?, ?, ?)", (paper_id, page, summary.model_dump_json()))
+        conn.execute(
+            "INSERT OR REPLACE INTO summaries (paper_id, page, data, level) VALUES (?, ?, ?, ?)",
+            (paper_id, page, summary.model_dump_json(), level),
+        )
 
 
-def get_abstract(paper_id: int) -> GraphicalAbstract | None:
+def get_abstract(paper_id: int, level: str) -> GraphicalAbstract | None:
     with lock:
-        row = conn.execute("SELECT data FROM abstracts WHERE paper_id = ?", (paper_id,)).fetchone()
+        row = conn.execute("SELECT data FROM abstracts WHERE paper_id = ? AND level = ?", (paper_id, level)).fetchone()
     return GraphicalAbstract.model_validate_json(row[0]) if row else None
 
 
-def save_abstract(paper_id: int, abstract: GraphicalAbstract) -> None:
+def abstract_levels(paper_id: int) -> list[str]:
+    """The reading levels this paper has a graphical abstract for."""
+    with lock:
+        return [r[0] for r in conn.execute("SELECT level FROM abstracts WHERE paper_id = ?", (paper_id,))]
+
+
+def save_abstract(paper_id: int, level: str, abstract: GraphicalAbstract) -> None:
     with lock, conn:
-        conn.execute("INSERT OR REPLACE INTO abstracts VALUES (?, ?)", (paper_id, abstract.model_dump_json()))
+        conn.execute(
+            "INSERT OR REPLACE INTO abstracts (paper_id, data, level) VALUES (?, ?, ?)",
+            (paper_id, abstract.model_dump_json(), level),
+        )
 
 
 def add_event(paper_id: int | None, kind: str, data: dict) -> None:

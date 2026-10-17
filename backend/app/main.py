@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from . import abstract as graphical
 from . import db, extract, memory, proof, quiz, summarize, tutor
+from .levels import DEFAULT, Level
 from .schemas import GraphicalAbstract, LearnerProfile, Note, PageSummary, Paper, Proof, Quiz
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
@@ -63,7 +64,7 @@ def get_paper(paper_id: int) -> dict:
     paper = db.get(paper_id)
     if not paper:
         raise HTTPException(404)
-    return {**paper.model_dump(), "has_pdf": db.has_pdf(paper_id), "has_abstract": db.get_abstract(paper_id) is not None}
+    return {**paper.model_dump(), "has_pdf": db.has_pdf(paper_id), "abstract_levels": db.abstract_levels(paper_id)}
 
 
 @app.delete("/papers/{paper_id}", status_code=204)
@@ -80,26 +81,28 @@ def get_pdf(paper_id: int) -> Response:
     return Response(pdf, media_type="application/pdf")
 
 
-summary_locks = defaultdict(threading.Lock)  # one generation per page, even if the viewer asks twice
+# Notes, abstracts and quizzes are written for one reading level (app/levels.py), passed as ?level=.
+
+summary_locks = defaultdict(threading.Lock)  # one generation per page and level, even if the viewer asks twice
 
 
-def page_summary(paper_id: int, paper: Paper, page: int) -> PageSummary:
+def page_summary(paper_id: int, paper: Paper, page: int, level: Level) -> PageSummary:
     """Notes for one page (0-indexed), generated on first request and cached."""
-    with summary_locks[paper_id, page]:
-        if summary := db.get_summary(paper_id, page):
+    with summary_locks[paper_id, page, level]:
+        if summary := db.get_summary(paper_id, page, level):
             return summary
-        summary = summarize.summarize_page(paper, page, db.get_pdf(paper_id))
-        db.save_summary(paper_id, page, summary)
+        summary = summarize.summarize_page(paper, page, level, db.get_pdf(paper_id))
+        db.save_summary(paper_id, page, level, summary)
         return summary
 
 
-def all_summaries(paper_id: int, paper: Paper) -> list[PageSummary]:
+def all_summaries(paper_id: int, paper: Paper, level: Level) -> list[PageSummary]:
     """Notes for every page. A page whose notes can't be written is left empty (and retried next time) rather than
     sinking whatever needs the whole paper."""
 
     def one(i: int) -> PageSummary:
         try:
-            return page_summary(paper_id, paper, i)
+            return page_summary(paper_id, paper, i, level)
         except Exception:
             logging.exception("notes for paper %s page %s failed; leaving it out", paper_id, i)
             return PageSummary(notes=[])
@@ -127,39 +130,39 @@ def claude_errors(what: str):
 
 
 @app.get("/papers/{paper_id}/pages/{page}/summary")
-def get_summary(paper_id: int, page: int) -> PageSummary:
+def get_summary(paper_id: int, page: int, level: Level = DEFAULT) -> PageSummary:
     paper = get_paper_or_404(paper_id)
     if not 0 <= page < len(paper.pages):
         raise HTTPException(404)
     with claude_errors(f"summary of paper {paper_id} page {page}"):
-        return page_summary(paper_id, paper, page)
+        return page_summary(paper_id, paper, page, level)
 
 
 @app.get("/papers/{paper_id}/abstract")
-def get_abstract(paper_id: int) -> GraphicalAbstract:
-    if not (abstract := db.get_abstract(paper_id)):
+def get_abstract(paper_id: int, level: Level = DEFAULT) -> GraphicalAbstract:
+    if not (abstract := db.get_abstract(paper_id, level)):
         raise HTTPException(404)
     return abstract
 
 
 @app.post("/papers/{paper_id}/abstract")
-def make_abstract(paper_id: int) -> GraphicalAbstract:
+def make_abstract(paper_id: int, level: Level = DEFAULT) -> GraphicalAbstract:
     """(Re)make the graphical abstract from the notes, writing notes for any pages not read yet."""
     paper = get_paper_or_404(paper_id)
     with claude_errors(f"abstract of paper {paper_id}"):
-        abstract = graphical.make(paper, all_summaries(paper_id, paper), db.get_pdf(paper_id))
-    db.save_abstract(paper_id, abstract)
+        abstract = graphical.make(paper, all_summaries(paper_id, paper, level), db.get_pdf(paper_id), level)
+    db.save_abstract(paper_id, level, abstract)
     return abstract
 
 
 @app.post("/papers/{paper_id}/quiz")
-def make_quiz(paper_id: int) -> Quiz:
+def make_quiz(paper_id: int, level: Level = DEFAULT) -> Quiz:
     """A fresh quiz each time, from the notes and the graphical abstract."""
     paper = get_paper_or_404(paper_id)
-    if not (abstract := db.get_abstract(paper_id)):
+    if not (abstract := db.get_abstract(paper_id, level)):
         raise HTTPException(409, "Make the graphical abstract first.")
     with claude_errors(f"quiz for paper {paper_id}"):
-        return quiz.make(paper, all_summaries(paper_id, paper), abstract)
+        return quiz.make(paper, all_summaries(paper_id, paper, level), abstract, level)
 
 
 class QuizResult(BaseModel):
@@ -207,12 +210,12 @@ class ProofRequest(BaseModel):
 
 
 @app.post("/papers/{paper_id}/proof")
-def show_proof(paper_id: int, req: ProofRequest) -> Proof:
+def show_proof(paper_id: int, req: ProofRequest, level: Level = DEFAULT) -> Proof:
     """The original paragraph behind a quiz answer, with the key words picked out, plus its note."""
     paper = get_paper_or_404(paper_id)
     try:
         p, k = summarize.parse_note_id(req.proof)
-        note = db.get_summary(paper_id, p).notes[k]
+        note = db.get_summary(paper_id, p, level).notes[k]
     except (ValueError, IndexError, AttributeError):
         raise HTTPException(404, "No such note")
     with claude_errors(f"proof for paper {paper_id}"):
@@ -226,38 +229,38 @@ class AskRequest(BaseModel):
 
 
 @app.post("/papers/{paper_id}/pages/{page}/ask")
-def ask(paper_id: int, page: int, req: AskRequest) -> dict:
+def ask(paper_id: int, page: int, req: AskRequest, level: Level = DEFAULT) -> dict:
     """Answer a question about a highlighted passage. Returns the reply, and the note if the tutor updated it."""
-    paper, summary = db.get(paper_id), db.get_summary(paper_id, page)
+    paper, summary = db.get(paper_id), db.get_summary(paper_id, page, level)
     if not paper or not 0 <= page < len(paper.pages):
         raise HTTPException(404)
     note = summary.notes[req.note] if summary and req.note is not None and 0 <= req.note < len(summary.notes) else None
     with claude_errors(f"tutor for paper {paper_id} page {page}"):
-        reply = tutor.answer(paper, page, note, req.selection, req.messages)
+        reply = tutor.answer(paper, page, note, req.selection, req.messages, level)
     chat = "\n".join(f"{'Reader' if m['role'] == 'user' else 'Tutor'}: {m['content']}" for m in req.messages)
     memory.record(
         paper_id,
         "question",
-        {"page": page, "selection": req.selection, "question": req.messages[-1]["content"], "answer": reply.reply},
+        {"page": page, "level": level, "selection": req.selection, "question": req.messages[-1]["content"], "answer": reply.reply},
         f'Reading "{paper.title}", they highlighted "{req.selection}" and chatted with the tutor:\n{chat}\nTutor: {reply.reply}',
     )
     updated = None
     if note and reply.update_note and (reply.bullets or reply.heading):
         note.bullets = reply.bullets or note.bullets
         note.heading = reply.heading or note.heading
-        db.save_summary(paper_id, page, summary)
+        db.save_summary(paper_id, page, level, summary)
         updated = note
     return {"reply": reply.reply, "updated_note": updated}
 
 
 @app.put("/papers/{paper_id}/pages/{page}/notes/{index}")
-def put_note(paper_id: int, page: int, index: int, note: Note) -> Note:
-    """Replace one note (the reader uses this to undo a tutor's edit)."""
-    summary = db.get_summary(paper_id, page)
+def put_note(paper_id: int, page: int, index: int, note: Note, level: Level = DEFAULT) -> Note:
+    """Replace one note (the reader's own edits, and undoing a tutor's edit)."""
+    summary = db.get_summary(paper_id, page, level)
     if not summary or not 0 <= index < len(summary.notes):
         raise HTTPException(404)
     summary.notes[index] = note
-    db.save_summary(paper_id, page, summary)
+    db.save_summary(paper_id, page, level, summary)
     return note
 
 

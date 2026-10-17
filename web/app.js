@@ -7,6 +7,26 @@
 const app = document.getElementById("app");
 const MARKS = ["*", "†", "‡", "§", "¶"]; // equal-contribution groups, in order of appearance
 
+// Reading levels (backend/app/levels.py): who the notes, graphical abstract and quiz are written for. The choice is
+// remembered in this browser.
+const LEVELS = {
+  outreach: ["Outreach", "For anyone: everyday words and analogies"],
+  adjacent: ["Technical", "For technical people from a neighbouring field: its jargon explained, methods kept"],
+  expert: ["Expert", "For people in the field: dense, jargon and all"],
+};
+let level = "outreach";
+try {
+  if (localStorage.getItem("level") in LEVELS) level = localStorage.getItem("level");
+} catch {}
+function setLevel(l) {
+  level = l;
+  try {
+    localStorage.setItem("level", l);
+  } catch {}
+}
+// `path` for the API calls that depend on the reading level.
+const atLevel = (path) => `${path}?level=${level}`;
+
 const routes = [
   [/^#?\/?$/, library],
   [/^#\/papers\/(\d+)$/, paper],
@@ -81,9 +101,12 @@ async function paper(id) {
         <a href="${esc(p.url)}" target="_blank">Original</a>
         ${p.doi ? `<a href="https://doi.org/${esc(p.doi)}" target="_blank">DOI ${esc(p.doi)}</a>` : ""}
         ${p.arxiv_id ? `<a href="https://arxiv.org/abs/${esc(p.arxiv_id)}" target="_blank">arXiv ${esc(p.arxiv_id)}</a>` : ""}
+        <div class="levels" role="group" aria-label="Notes written for">
+          ${Object.entries(LEVELS).map(([key, [name, about]]) => `<button data-level="${key}" title="${esc(about)}" aria-pressed="${key === level}">${name}</button>`).join("")}
+        </div>
         <button class="btn" id="toggle-notes">Show originals</button>
-        <button class="btn" id="abstract">${p.has_abstract ? "Graphical abstract" : "Done? Make graphical abstract"}</button>
-        <button class="btn primary" id="quiz" ${p.has_abstract ? "" : "hidden"}>Quiz me ✦</button>
+        <button class="btn" id="abstract"></button>
+        <button class="btn primary" id="quiz">Quiz me ✦</button>
         <button class="btn quiet" id="delete">Delete</button>
       </div>
     </section>
@@ -97,12 +120,28 @@ async function paper(id) {
   });
   const abstractButton = app.querySelector("#abstract");
   const quizButton = app.querySelector("#quiz");
+  const hasAbstract = () => p.abstract_levels.includes(level); // abstracts are made per reading level
+  const showButtons = () => {
+    abstractButton.textContent = hasAbstract() ? "Graphical abstract" : "Done? Make graphical abstract";
+    quizButton.hidden = !hasAbstract();
+  };
+  showButtons();
   abstractButton.addEventListener("click", () =>
     showAbstract(id, p.title, {
-      make: !p.has_abstract,
-      onReady: () => ((p.has_abstract = true), (abstractButton.textContent = "Graphical abstract"), (quizButton.hidden = false)),
+      make: !hasAbstract(),
+      onReady: () => (hasAbstract() || p.abstract_levels.push(level), showButtons()),
     }),
   );
+  app.querySelector(".levels").addEventListener("click", (e) => {
+    const key = e.target.dataset.level;
+    if (!key || key === level) return;
+    setLevel(key);
+    app.querySelectorAll(".levels button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.level === key));
+    closeChat();
+    toggle.textContent = "Show originals";
+    showButtons();
+    reloadNotes(doc);
+  });
   quizButton.addEventListener("click", () => startQuiz(id));
   app.querySelector("#delete").addEventListener("click", async () => {
     await deletePaper(id);

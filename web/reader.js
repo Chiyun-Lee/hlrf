@@ -48,6 +48,11 @@ async function renderReader(container, paperId, p) {
   }).observe(container);
 }
 
+// After the reading level changes: new notes on the pages already shown (the rest get them as they scroll in).
+function reloadNotes(container) {
+  container.querySelectorAll(".page").forEach((el) => el.loaded && el.loadNotes());
+}
+
 function pageView(paperId, page, i, pdf) {
   const el = document.createElement("section");
   const onPdf = pdf && page.width;
@@ -64,17 +69,26 @@ function pageView(paperId, page, i, pdf) {
   }
   el.insertAdjacentHTML("beforeend", `<div class="page-status"></div>`);
 
-  el.load = async () => {
+  el.load = () => {
+    el.loaded = true;
     if (onPdf) drawPdfPage(el, pdf, i);
+    el.loadNotes();
+  };
+  // Notes at the current reading level (app.js), replacing any there.
+  el.loadNotes = async () => {
+    const want = level;
     const status = el.querySelector(".page-status");
+    el.querySelectorAll(".note, .marks").forEach((n) => n.remove());
     status.textContent = "writing notes…";
     try {
-      const summary = await api(`/papers/${paperId}/pages/${i}/summary`);
+      const summary = await api(atLevel(`/papers/${paperId}/pages/${i}/summary`));
+      if (want !== level) return; // the reader switched level while these were being written
       summary.notes.forEach((n, k) => addNote(el, page, n, k, onPdf));
       status.textContent = "";
     } catch (e) {
+      if (want !== level) return;
       status.innerHTML = `notes failed <button>retry</button>`;
-      status.querySelector("button").onclick = () => el.load();
+      status.querySelector("button").onclick = () => el.loadNotes();
     }
   };
   return el;
@@ -166,7 +180,7 @@ async function editNote(note) {
   stopEditing(note);
   const page = note.closest(".page");
   try {
-    fillNote(note, await api(`/papers/${page.paperId}/pages/${page.dataset.page}/notes/${note.index}`, {
+    fillNote(note, await api(atLevel(`/papers/${page.paperId}/pages/${page.dataset.page}/notes/${note.index}`), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updated),

@@ -60,7 +60,13 @@ input[type="search"] { width: 100%; }
 .authors { line-height: 1.7; }
 .authors sup { color: var(--ink); margin-left: 1px; }
 .links { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-top: 12px; align-items: center; }
-.links #toggle-notes { margin-left: auto; }
+.links .levels { margin-left: auto; }
+/* Reading level: a segmented switch, like the note switches */
+.levels { display: inline-flex; border: 1.5px solid var(--ink); border-radius: 10px; overflow: hidden; }
+.levels button { font: 15px var(--hand); padding: 4px 11px; border: 0; background: var(--card); color: var(--ink); cursor: pointer; }
+.levels button + button { border-left: 1.5px solid var(--ink); }
+.levels button:hover { background: var(--ink-soft); }
+.levels button[aria-pressed="true"] { background: var(--ink); color: #fff; }
 .notes { margin-top: 12px; padding: 10px 12px; border-left: 3px solid var(--border); }
 
 /* My learning (app.js me()) */
