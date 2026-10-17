@@ -10,6 +10,7 @@ from app.schemas import Block, InkAnswer, Page, Paper
 client = TestClient(app)
 
 STROKE = {"id": "s1", "page": 0, "tool": "pen", "color": "#1f2f7a", "width": 1.6, "points": [[10, 20, 0.5], [30, 40, 0.6]]}
+TEXT = {"id": "t1", "page": 1, "x": 420, "y": 100, "w": 180, "text": "check Table 2\nvs RNNs", "color": "#b0181c"}
 CARD = {"id": "c1", "page": 0, "x": 300, "y": 20, "w": 240, "read": ["why √d_k?"], "answer": "Because **scale** (p. 4).", "collapsed": False, "created": "2026-10-17T12:00:00Z"}
 
 
@@ -23,9 +24,10 @@ def paper_id():
 
 
 def test_ink_is_saved_and_deleted_with_its_paper(paper_id):
-    assert client.get(f"/papers/{paper_id}/ink").json() == {"strokes": [], "cards": []}
-    assert client.put(f"/papers/{paper_id}/ink", json={"strokes": [STROKE], "cards": [CARD]}).status_code == 200
-    assert client.get(f"/papers/{paper_id}/ink").json() == {"strokes": [STROKE], "cards": [CARD]}
+    assert client.get(f"/papers/{paper_id}/ink").json() == {"strokes": [], "texts": [], "cards": []}
+    saved = {"strokes": [STROKE], "texts": [TEXT], "cards": [CARD]}
+    assert client.put(f"/papers/{paper_id}/ink", json=saved).status_code == 200
+    assert client.get(f"/papers/{paper_id}/ink").json() == saved
     db.delete(paper_id)
     assert client.get(f"/papers/{paper_id}/ink").status_code == 404
     assert db.get_ink(paper_id).strokes == []
@@ -44,7 +46,7 @@ def test_ask_sends_the_screen_the_paper_and_earlier_answers(paper_id, monkeypatc
 
     res = client.post(
         f"/papers/{paper_id}/ink/ask?level=expert",
-        json={"image": "aGVsbG8=", "pages": [1, 2], "notes": ["Scaled attention · divide by √d_k"], "card": "c2"},
+        json={"image": "aGVsbG8=", "pages": [1, 2], "notes": ["Scaled attention · divide by √d_k"], "typed": ["[p. 2] check Table 2"], "card": "c2"},
     )
     assert res.status_code == 200
     assert res.json() == {"read": ["why √d_k? (next to Eq. 1)"], "answer": "To keep the softmax from saturating (p. 4)."}
@@ -54,6 +56,7 @@ def test_ask_sends_the_screen_the_paper_and_earlier_answers(paper_id, monkeypatc
     assert "[p. 3]\nText of page 3." in text["text"]  # the whole paper, page by page
     assert "page(s) 2, 3 of 3" in text["text"]
     assert "divide by √d_k" in text["text"]
+    assert "- [p. 2] check Table 2" in text["text"]  # the reader's typed notes, exactly
     assert "Because **scale**" in text["text"] and "older" not in text["text"]  # the card being re-asked isn't history
     assert calls[1][0] == "memory"
 

@@ -422,6 +422,7 @@ class InkAskRequest(BaseModel):
     media_type: Literal["image/jpeg", "image/png"] = "image/jpeg"
     pages: list[int]  # the pages it shows, top to bottom
     notes: list[str] = []  # the doodle notes on screen
+    typed: list[str] = []  # the reader's text boxes on screen, "[p. N] text"
     card: str | None = None  # the card this answers (re-asking replaces it), so it isn't sent as an earlier answer
 
 
@@ -433,7 +434,7 @@ def ask_ink(paper_id: int, req: InkAskRequest, level: Level = DEFAULT) -> dict:
         raise HTTPException(422, "No such page")
     earlier = [c for c in db.get_ink(paper_id).cards if c.id != req.card and c.answer]
     with claude_errors(f"ink ask for paper {paper_id}"):
-        reply = ink.answer(paper, req.image, req.media_type, req.pages, req.notes, earlier, level)
+        reply = ink.answer(paper, req.image, req.media_type, req.pages, req.notes, earlier, level, req.typed)
     memory.record(
         paper_id,
         "question",

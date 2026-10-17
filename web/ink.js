@@ -1,12 +1,13 @@
 // Write or draw on the paper and Ask about it, as in the PDF Notebook. ✎ Write (bottom-left) turns the pages into
-// paper you can write on with a pen, a mouse or a finger: pens in three colours, a highlighter, an eraser, undo. Ask ✦
-// sends the part of the paper on screen, with your ink on it, to Claude (backend/app/ink.py), which reads the
-// handwriting and answers in one card pinned next to it (Markdown with maths, typeset by MathJax). Cards can be
-// dragged by their header, folded or removed; a follow-up Ask builds on the earlier cards.
+// paper you can write on with a pen, a mouse or a finger: pens in three colours, a highlighter, text boxes, an eraser,
+// a lasso to select, move or delete, and undo. Ask ✦ sends the part of the paper on screen, with your ink and text on
+// it, to Claude (backend/app/ink.py), which reads it and answers in one card pinned next to it (Markdown with maths,
+// typeset by MathJax). Cards can be dragged by their header, folded or removed; a follow-up Ask builds on the earlier
+// cards.
 //
-// Ink lives on PDF pages only, in PDF points, so it stays put at any width. Strokes and cards are saved per paper
-// (GET/PUT /papers/:id/ink) shortly after each change. While ✎ Write is off the ink layer lets every click through,
-// so the notes, pins and highlight-to-ask work as before.
+// Ink lives on PDF pages only, in PDF points, so it stays put at any width. Strokes, text boxes and cards are saved per
+// paper (GET/PUT /papers/:id/ink) shortly after each change. While ✎ Write is off the ink layer lets every click
+// through, so the notes, pins and highlight-to-ask work as before.
 
 const FREEHAND = "https://cdn.jsdelivr.net/npm/perfect-freehand@1.2.2/dist/esm/index.mjs";
 const MARKED = "https://cdn.jsdelivr.net/npm/marked@15.0.12/lib/marked.esm.js";
@@ -14,15 +15,19 @@ const PENS = ["#1f2f7a", "#b0181c", "#1d7a3a"]; // navy ink, red, green
 const HIGHLIGHTER = "#f2d50f";
 const WIDTH = { pen: 1.6, highlighter: 11 }; // PDF points
 const ERASER = 5; // PDF points around the pointer
+const TEXT_SIZE = 13; // PDF points (css: .ink-text)
+const TEXT_WIDTH = 220; // PDF points: the widest a text box grows before it wraps
 const CARD_WIDTH = 240; // PDF points, at most 45% of the page
 const CARD_HEIGHT = 150; // estimated, for placement; the card grows downwards from there
 const GAP = 8;
 const SAVE_AFTER = 600; // ms after the last change
 const CAPTURE_EDGE = 1568; // longest side of the image sent to Claude, in pixels
+const KINDS = ["strokes", "texts", "cards"]; // what an undoable action can add or remove
+const SVG = "http://www.w3.org/2000/svg";
 
 let getStroke; // perfect-freehand, once loaded; plain lines until then (or if it can't load)
 let markedLib;
-let ink; // the open paper's ink: {paperId, pages, strokes, cards, ...}
+let ink; // the open paper's ink: {paperId, pages, strokes, texts, cards, ...}
 
 // Sets up writing on the reader's PDF pages. Called by renderReader once the pages are in `container`.
 async function setupInk(container, paperId, p) {
@@ -33,7 +38,7 @@ async function setupInk(container, paperId, p) {
   for (const el of pageEls) {
     const i = +el.dataset.page;
     const { width, height } = p.pages[i];
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const svg = document.createElementNS(SVG, "svg");
     svg.setAttribute("class", "ink");
     svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
     svg.setAttribute("preserveAspectRatio", "none");
@@ -42,16 +47,17 @@ async function setupInk(container, paperId, p) {
     pages.set(i, page);
     wirePointer(page);
   }
-  ink = { paperId, container, pages, strokes: [], cards: [], undo: [], redo: [], tool: "pen", color: PENS[0], askedUpTo: 0 };
+  ink = { paperId, container, pages, strokes: [], texts: [], cards: [], undo: [], redo: [], tool: "pen", color: PENS[0], asked: new Set() };
   const state = ink;
+  container.classList.add("tool-pen");
   container.after(toolbar(state));
   try {
     const saved = await api(`/papers/${paperId}/ink`);
     if (ink !== state) return; // left the paper meanwhile
-    state.strokes = [...saved.strokes, ...state.strokes]; // keep anything drawn while it loaded
-    state.cards = [...saved.cards, ...state.cards];
-    state.askedUpTo = saved.strokes.length;
+    for (const kind of KINDS) state[kind] = [...saved[kind], ...state[kind]]; // keep anything made while it loaded
+    [...saved.strokes, ...saved.texts].forEach((m) => state.asked.add(m.id));
     pages.forEach(redrawPage);
+    saved.texts.forEach((t) => showText(state, t));
     saved.cards.forEach((c) => showCard(state, c));
   } catch (e) {
     console.warn("couldn't load ink", e);
@@ -70,6 +76,10 @@ function toolbar(state) {
     <span class="ink-tools" hidden>
       ${PENS.map((c, k) => `<button data-tool="pen" data-color="${c}" title="Pen" aria-pressed="${k === 0}"><i style="background:${c}"></i></button>`).join("")}
       <button data-tool="highlighter" data-color="${HIGHLIGHTER}" title="Highlighter" aria-pressed="false"><i class="hl" style="background:${HIGHLIGHTER}"></i></button>
+      <button data-tool="text" title="Text box: click the page to type" aria-pressed="false">T</button>
+      <button data-tool="lasso" title="Lasso: circle ink, text or cards to move or delete them" aria-pressed="false">
+        <svg viewBox="0 0 16 16" width="15" height="15"><ellipse cx="8" cy="7" rx="6.5" ry="4.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.5 2"/><path d="M5 11.5 q-1 2.5 1.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+      </button>
       <button data-tool="eraser" title="Eraser" aria-pressed="false">⌫</button>
       <button class="ink-undo" title="Undo (⌘Z)">↶</button>
       <button class="ink-redo" title="Redo (⇧⌘Z)">↷</button>
@@ -81,12 +91,16 @@ function toolbar(state) {
     write.setAttribute("aria-pressed", on);
     bar.querySelector(".ink-tools").hidden = !on;
     state.container.classList.toggle("writing", on);
+    if (!on) (document.activeElement?.blur(), select(state, null));
   };
   bar.querySelectorAll("[data-tool]").forEach((b) =>
     b.addEventListener("click", () => {
+      state.container.classList.remove(`tool-${state.tool}`);
       state.tool = b.dataset.tool;
+      state.container.classList.add(`tool-${state.tool}`);
       if (b.dataset.color) state.color = b.dataset.color;
       bar.querySelectorAll("[data-tool]").forEach((o) => o.setAttribute("aria-pressed", o === b));
+      if (state.tool !== "lasso") select(state, null);
     }),
   );
   bar.querySelector(".ink-undo").onclick = () => undo(state);
@@ -96,19 +110,25 @@ function toolbar(state) {
 }
 
 document.addEventListener("keydown", (e) => {
-  if (!ink?.container.isConnected || !(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
-  if (e.target.closest?.("input, textarea, [contenteditable=true]")) return;
-  e.preventDefault();
-  e.shiftKey ? redo(ink) : undo(ink);
+  if (!ink?.container.isConnected || e.target.closest?.("input, textarea, [contenteditable=true]")) return;
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+    e.preventDefault();
+    e.shiftKey ? redo(ink) : undo(ink);
+  } else if (ink.selection && (e.key === "Delete" || e.key === "Backspace")) {
+    e.preventDefault();
+    record(ink, { remove: ink.selection.items });
+  } else if (ink.selection && e.key === "Escape") {
+    select(ink, null);
+  }
 });
 
-// --- Drawing -------------------------------------------------------------------------------------------------------
+// --- Drawing, erasing, lasso and text ------------------------------------------------------------------------------
 
 // Pen, mouse or finger draw while ✎ Write is on. Once a pen has touched the page, fingers scroll instead (palm
 // rejection, for a tablet with a stylus).
 function wirePointer(page) {
   const { svg } = page;
-  let live = null; // {stroke, path} being drawn, or {erased} while erasing
+  let live = null; // {stroke, path} being drawn, {erased} while erasing, {lasso, path} while lassoing
   let scrolling = null;
   let penSeen = false;
 
@@ -122,15 +142,25 @@ function wirePointer(page) {
     if (e.pointerType === "pen") penSeen = true;
     if (penSeen && e.pointerType === "touch") return (scrolling = { id: e.pointerId, y: e.clientY });
     e.preventDefault();
-    capturePointer(svg, e);
     const state = ink;
+    const editing = document.activeElement?.closest?.(".ink-text");
+    if (editing) return editing.blur(); // a click off a text box being typed in just finishes it
+    if (state.tool === "text") return editText(state, page, null, toPage(e));
+    capturePointer(svg, e);
     if (state.tool === "eraser") {
-      live = { id: e.pointerId, erased: [] };
-      erase(state, page, toPage(e), live.erased);
+      live = { id: e.pointerId, erased: { strokes: [], texts: [] } };
+      return erase(state, page, toPage(e), live.erased);
+    }
+    if (state.tool === "lasso") {
+      select(state, null);
+      const path = document.createElementNS(SVG, "path");
+      path.setAttribute("class", "lasso");
+      svg.append(path);
+      live = { id: e.pointerId, lasso: [toPage(e)], path };
       return;
     }
     const stroke = { id: newId(), page: page.i, tool: state.tool, color: state.color, width: WIDTH[state.tool], points: [] };
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    const path = document.createElementNS(SVG, "path");
     svg.append(path);
     live = { id: e.pointerId, stroke, path };
     addPoint(live, e, toPage);
@@ -140,6 +170,10 @@ function wirePointer(page) {
     if (scrolling?.id === e.pointerId) return (scrollBy(0, scrolling.y - e.clientY), (scrolling.y = e.clientY));
     if (live?.id !== e.pointerId) return;
     if (live.erased) return erase(ink, page, toPage(e), live.erased);
+    if (live.lasso) {
+      live.lasso.push(toPage(e));
+      return live.path.setAttribute("d", `M${live.lasso.map(([x, y]) => `${x} ${y}`).join(" L")} Z`);
+    }
     const coalesced = e.getCoalescedEvents?.() ?? [];
     for (const ev of coalesced.length ? coalesced : [e]) addPoint(live, ev, toPage);
   });
@@ -150,10 +184,11 @@ function wirePointer(page) {
     const done = live;
     live = null;
     if (done.erased) {
-      if (done.erased.length) record(ink, { remove: { strokes: done.erased } });
+      if (done.erased.strokes.length || done.erased.texts.length) record(ink, { remove: done.erased }, true);
       return;
     }
     done.path.remove();
+    if (done.lasso) return select(ink, lassoed(ink, page, done.lasso));
     if (done.stroke.points.length) record(ink, { add: { strokes: [done.stroke] } });
   };
   svg.addEventListener("pointerup", end);
@@ -171,6 +206,7 @@ function addPoint(live, e, toPage) {
 
 function drawStroke(path, s, finished = true) {
   path.setAttribute("class", s.tool);
+  path.dataset.id = s.id;
   if (getStroke) {
     const pressure = s.points.some(([, , p]) => p !== 0.5);
     const outline =
@@ -206,19 +242,23 @@ function redrawPage(page) {
   page.svg.replaceChildren();
   const strokes = ink.strokes.filter((s) => s.page === page.i);
   for (const s of [...strokes.filter((s) => s.tool === "highlighter"), ...strokes.filter((s) => s.tool !== "highlighter")]) {
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    const path = document.createElementNS(SVG, "path");
     drawStroke(path, s);
     page.svg.append(path);
   }
 }
 
-// Removes (into `erased`) every stroke on the page passing within ERASER of `at`.
+// Removes (into `erased`) every stroke passing within ERASER of `at`, and any text box under it.
 function erase(state, page, at, erased) {
-  const hit = state.strokes.filter((s) => s.page === page.i && nearStroke(s, at, ERASER + s.width / 2));
-  if (!hit.length) return;
-  state.strokes = state.strokes.filter((s) => !hit.includes(s));
-  erased.push(...hit);
-  redrawPage(page);
+  const strokes = state.strokes.filter((s) => s.page === page.i && nearStroke(s, at, ERASER + s.width / 2));
+  const texts = state.texts.filter((t) => t.page === page.i && inside(textRect(t), at));
+  if (!strokes.length && !texts.length) return;
+  state.strokes = state.strokes.filter((s) => !strokes.includes(s));
+  state.texts = state.texts.filter((t) => !texts.includes(t));
+  texts.forEach(hideEl);
+  erased.strokes.push(...strokes);
+  erased.texts.push(...texts);
+  if (strokes.length) redrawPage(page);
 }
 
 function nearStroke(s, [x, y], r) {
@@ -235,23 +275,163 @@ function segmentDistance([ax, ay], [bx, by], x, y) {
   return Math.hypot(ax + t * dx - x, ay + t * dy - y);
 }
 
+// What a lasso loop takes in: strokes with most of their points inside it, and text boxes and cards whose middle is.
+function lassoed(state, page, loop) {
+  if (loop.length < 3) return null;
+  const middle = ([x0, y0, x1, y1]) => [(x0 + x1) / 2, (y0 + y1) / 2];
+  const items = {
+    strokes: state.strokes.filter((s) => s.page === page.i && s.points.filter((p) => inPolygon(p, loop)).length > s.points.length / 2),
+    texts: state.texts.filter((t) => t.page === page.i && inPolygon(middle(textRect(t)), loop)),
+    cards: state.cards.filter((c) => c.page === page.i && !c.pending && inPolygon(middle(cardRect(c)), loop)),
+  };
+  return KINDS.some((k) => items[k].length) ? { page, items } : null;
+}
+
+// --- Text boxes ----------------------------------------------------------------------------------------------------
+
+function showText(state, t) {
+  const page = state.pages.get(t.page);
+  if (!page) return;
+  const el = document.createElement("div");
+  el.className = "ink-text";
+  el.textContent = t.text;
+  t.el = el;
+  page.el.append(el);
+  placeText(t, page);
+  el.addEventListener("pointerdown", (e) => {
+    if (state.tool !== "text" || el.isContentEditable) return;
+    e.preventDefault();
+    editText(state, page, t);
+  });
+}
+
+function placeText(t, page) {
+  Object.assign(t.el.style, { left: pct(t.x, page.width), top: pct(t.y, page.height), maxWidth: pct(t.w, page.width), color: t.color });
+}
+
+// Types into text box `t`, or into a new one at `at`. Finishing (a click elsewhere, or Escape) makes it one undoable
+// change: adding the box, changing its text, or removing it if it was emptied.
+function editText(state, page, t, at) {
+  let el = t?.el;
+  if (!t) {
+    const [x, y] = at;
+    const draft = { x, y: y - TEXT_SIZE * 0.7, w: Math.max(60, Math.min(TEXT_WIDTH, page.width - x - GAP)), color: state.color === HIGHLIGHTER ? PENS[0] : state.color };
+    el = document.createElement("div");
+    el.className = "ink-text";
+    page.el.append(el);
+    placeText({ ...draft, el }, page);
+    t = null;
+    el.draft = draft;
+  }
+  el.contentEditable = "true";
+  el.focus();
+  getSelection().selectAllChildren(el);
+  getSelection().collapseToEnd();
+  el.onkeydown = (e) => e.key === "Escape" && (e.preventDefault(), el.blur());
+  el.addEventListener(
+    "blur",
+    () => {
+      el.contentEditable = "false";
+      el.onkeydown = null;
+      const text = el.innerText.replace(/\n+$/, "").trim();
+      if (!t) {
+        el.remove();
+        if (text) record(state, { add: { texts: [{ id: newId(), page: page.i, ...el.draft, text }] } });
+      } else if (!text) {
+        record(state, { remove: { texts: [t] } });
+      } else if (text !== t.text) {
+        record(state, { remove: { texts: [t] }, add: { texts: [{ ...plain(t), text }] } });
+      } else {
+        el.textContent = t.text;
+      }
+    },
+    { once: true },
+  );
+}
+
+// --- Selection (lasso) ---------------------------------------------------------------------------------------------
+
+// Shows `sel` ({page, items}, or null for none) as a dashed box: drag it to move what's in it, × to delete it.
+function select(state, sel) {
+  state.selection?.box.remove();
+  state.selection = sel;
+  if (!sel) return;
+  const { page, items } = sel;
+  const [x0, y0, x1, y1] = union([...items.strokes.map(bounds), ...items.texts.map(textRect), ...items.cards.map(cardRect)]);
+  const box = document.createElement("div");
+  box.className = "ink-selection";
+  Object.assign(box.style, { left: pct(x0 - 4, page.width), top: pct(y0 - 4, page.height), width: pct(x1 - x0 + 8, page.width), height: pct(y1 - y0 + 8, page.height) });
+  box.innerHTML = `<button title="Delete (⌫)">×</button>`;
+  box.querySelector("button").onclick = () => record(state, { remove: items });
+  page.el.append(box);
+  sel.box = box;
+  box.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("button")) return;
+    e.preventDefault();
+    capturePointer(box, e);
+    const k = page.width / page.el.getBoundingClientRect().width; // points per pixel
+    const start = [e.clientX, e.clientY];
+    let d = [0, 0];
+    const paths = items.strokes.map((s) => page.svg.querySelector(`[data-id="${s.id}"]`)).filter(Boolean);
+    const els = [box, ...items.texts.map((t) => t.el), ...items.cards.map((c) => c.el)].filter(Boolean);
+    const move = (ev) => {
+      d = [round((ev.clientX - start[0]) * k), round((ev.clientY - start[1]) * k)];
+      paths.forEach((p) => p.setAttribute("transform", `translate(${d[0]} ${d[1]})`));
+      els.forEach((el) => (el.style.transform = `translate(${d[0] / k}px, ${d[1] / k}px)`));
+    };
+    const up = () => {
+      box.removeEventListener("pointermove", move);
+      els.forEach((el) => (el.style.transform = ""));
+      if (!d[0] && !d[1]) return;
+      const moved = moveItems(items, d);
+      record(state, { remove: items, add: moved });
+      select(state, { page, items: moved });
+    };
+    box.addEventListener("pointermove", move);
+    box.addEventListener("pointerup", up, { once: true });
+  });
+}
+
+function moveItems(items, [dx, dy]) {
+  return {
+    strokes: items.strokes.map((s) => ({ ...s, points: s.points.map(([x, y, p]) => [round(x + dx), round(y + dy), p]) })),
+    texts: items.texts.map((t) => ({ ...plain(t), x: round(t.x + dx), y: round(t.y + dy) })),
+    cards: items.cards.map((c) => ({ ...plain(c), x: round(c.x + dx), y: round(c.y + dy) })),
+  };
+}
+
 // --- Undo and saving -----------------------------------------------------------------------------------------------
 
-// An action adds and/or removes strokes and cards. `record` applies a new one (erased strokes are already gone).
-function record(state, action) {
-  apply(state, action);
+// An action adds and/or removes strokes, text boxes and cards ({add: {strokes, texts, cards}, remove: {...}}); a move
+// or an edit removes the old version and adds the new one. `record` applies a new one; `done` when it already happened
+// (the eraser removes as it goes).
+function record(state, action, done = false) {
+  if (!done) apply(state, action);
+  else save(state);
   state.undo.push(action);
   state.redo = [];
 }
 
-function apply(state, { add, remove }) {
-  const has = (list, x) => list.some((y) => y.id === x.id);
-  if (remove?.strokes) state.strokes = state.strokes.filter((s) => !has(remove.strokes, s));
-  if (remove?.cards) (state.cards = state.cards.filter((c) => !has(remove.cards, c))), remove.cards.forEach(hideCard);
-  if (add?.strokes) state.strokes.push(...add.strokes.filter((s) => !has(state.strokes, s)));
-  if (add?.cards) add.cards.filter((c) => !has(state.cards, c)).forEach((c) => (state.cards.push(c), showCard(state, c)));
-  const touched = [...(add?.strokes ?? []), ...(remove?.strokes ?? [])].map((s) => s.page);
-  new Set(touched).forEach((i) => state.pages.has(i) && redrawPage(state.pages.get(i)));
+function apply(state, { add = {}, remove = {} }) {
+  select(state, null);
+  const ids = (list) => new Set((list ?? []).map((x) => x.id));
+  for (const kind of KINDS) {
+    const gone = ids(remove[kind]);
+    if (!gone.size) continue;
+    state[kind].filter((x) => gone.has(x.id)).forEach(hideEl);
+    state[kind] = state[kind].filter((x) => !gone.has(x.id));
+  }
+  for (const kind of KINDS) {
+    const have = ids(state[kind]);
+    for (const x of add[kind] ?? []) {
+      if (have.has(x.id)) continue;
+      state[kind].push(x);
+      if (kind === "texts") showText(state, x);
+      if (kind === "cards") showCard(state, x);
+    }
+  }
+  const touched = new Set([...(add.strokes ?? []), ...(remove.strokes ?? [])].map((s) => s.page));
+  touched.forEach((i) => state.pages.has(i) && redrawPage(state.pages.get(i)));
   save(state);
 }
 
@@ -271,16 +451,15 @@ function redo(state) {
   state.undo.push(action);
 }
 
+// What's saved of a stroke, text box or card: everything but its element and the state of an Ask in flight.
+const plain = ({ el, pending, error, controller, ...x }) => x;
+
 function save(state) {
   clearTimeout(state.saving);
   state.saving = setTimeout(async () => {
-    const cards = state.cards.filter((c) => c.answer).map(({ el, pending, error, controller, ...c }) => c);
+    const body = { strokes: state.strokes, texts: state.texts.map(plain), cards: state.cards.filter((c) => c.answer).map(plain) };
     try {
-      await api(`/papers/${state.paperId}/ink`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ strokes: state.strokes, cards }),
-      });
+      await api(`/papers/${state.paperId}/ink`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     } catch (e) {
       console.warn("couldn't save ink", e);
     }
@@ -304,6 +483,7 @@ function visiblePages(state) {
 }
 
 async function ask(state, retry) {
+  document.activeElement?.closest?.(".ink-text")?.blur(); // a text box being typed in is part of the question
   const shown = visiblePages(state);
   if (!shown.length) return;
   let card = retry;
@@ -311,13 +491,13 @@ async function ask(state, retry) {
     const { page, anchor, view } = focus(state, shown);
     const w = Math.min(CARD_WIDTH, 0.45 * page.width);
     const obstacles = {
-      strokes: state.strokes.filter((s) => s.page === page.i).map(bounds),
+      marks: marksOn(state, page.i).map(markRect),
       text: page.blocks,
-      cards: state.cards.filter((c) => c.page === page.i).map((c) => [c.x, c.y, c.x + c.w, c.y + CARD_HEIGHT]),
+      cards: state.cards.filter((c) => c.page === page.i).map(cardRect),
     };
     const { x, y } = placeAnswer({ width: page.width, height: page.height, anchor, view, w, h: CARD_HEIGHT, ...obstacles });
     card = { id: newId(), page: page.i, x, y, w, read: [], answer: "", collapsed: false, created: new Date().toISOString() };
-    state.askedUpTo = state.strokes.length;
+    [...state.strokes, ...state.texts].forEach((m) => state.asked.add(m.id));
     record(state, { add: { cards: [card] } });
   }
   card.pending = true;
@@ -325,14 +505,15 @@ async function ask(state, retry) {
   card.controller = new AbortController();
   renderCard(card);
   try {
-    const image = await capture(shown);
+    const image = await capture(state, shown);
     const notes = shown.flatMap(({ page }) =>
       [...page.el.querySelectorAll(".note:not(.part):not(.off):not(.aside)")].map((n) => [n.data.heading, ...n.data.bullets].filter(Boolean).join(" · ")),
     );
+    const typed = shown.flatMap((v) => state.texts.filter((t) => onScreen(t, v)).map((t) => `[p. ${t.page + 1}] ${t.text}`));
     const res = await api(atLevel(`/papers/${state.paperId}/ink/ask`), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image, media_type: "image/jpeg", pages: shown.map((v) => v.page.i), notes, card: card.id }),
+      body: JSON.stringify({ image, media_type: "image/jpeg", pages: shown.map((v) => v.page.i), notes, typed, card: card.id }),
       signal: card.controller.signal,
     });
     Object.assign(card, { read: res.read, answer: res.answer, pending: false });
@@ -344,24 +525,29 @@ async function ask(state, retry) {
   renderCard(card);
 }
 
-// The page to answer on (the one with the most ink on screen, else the one taking up most of the screen) and the
-// writing to put the card next to: what was written since the last Ask, else all the ink on screen. A tall patch
-// (more than half the screen) would push the card far away, so then it's just the last stroke.
+const marksOn = (state, i) => [...state.strokes, ...state.texts].filter((m) => m.page === i);
+const markRect = (m) => (m.points ? bounds(m) : textRect(m));
+const onScreen = (m, v) => m.page === v.page.i && markRect(m)[3] >= v.top && markRect(m)[1] <= v.bottom;
+
+// The page to answer on (the one with the most ink and text on screen, else the one taking up most of the screen) and
+// what to put the card next to: what was written since the last Ask, else everything on screen. A tall patch (more
+// than half the screen) would push the card far away, so then it's just the last thing written.
 function focus(state, shown) {
-  const onScreen = (s, v) => s.page === v.page.i && bounds(s)[3] >= v.top && bounds(s)[1] <= v.bottom;
-  const fresh = state.strokes.slice(state.askedUpTo);
-  const pool = shown.some((v) => fresh.some((s) => onScreen(s, v))) ? fresh : state.strokes;
-  const inkArea = (v) => pool.filter((s) => onScreen(s, v)).reduce((n, s) => n + area(bounds(s)) + 1, 0);
+  const all = [...state.strokes, ...state.texts];
+  const fresh = all.filter((m) => !state.asked.has(m.id));
+  const pool = shown.some((v) => fresh.some((m) => onScreen(m, v))) ? fresh : all;
+  const inkArea = (v) => pool.filter((m) => onScreen(m, v)).reduce((n, m) => n + area(markRect(m)) + 1, 0);
   const best = shown.reduce((a, b) => (inkArea(b) > inkArea(a) || (inkArea(b) === inkArea(a) && b.bottom - b.top > a.bottom - a.top) ? b : a));
-  const strokes = pool.filter((s) => onScreen(s, best));
-  let anchor = strokes.length ? union(strokes.map(bounds)) : null;
-  if (anchor && anchor[3] - anchor[1] > (best.bottom - best.top) / 2) anchor = bounds(strokes.at(-1));
+  const marks = pool.filter((m) => onScreen(m, best));
+  let anchor = marks.length ? union(marks.map(markRect)) : null;
+  if (anchor && anchor[3] - anchor[1] > (best.bottom - best.top) / 2) anchor = markRect(marks.at(-1));
   return { page: best.page, anchor, view: [best.top, best.bottom] };
 }
 
 // Where a card of size w×h goes on a page: beside the anchor (right, below, left, above, then the margins), never on
-// top of ink if it can help it, preferring free space over text, near the anchor and on screen. Pure, so testable.
-function placeAnswer({ width, height, anchor, view, w, h, strokes = [], text = [], cards = [] }) {
+// top of ink or text boxes if it can help it, preferring free space over the paper's text, near the anchor and on
+// screen. Pure, so testable.
+function placeAnswer({ width, height, anchor, view, w, h, marks = [], text = [], cards = [] }) {
   const [vt, vb] = view;
   const mid = (vt + vb) / 2;
   const [ax0, ay0, ax1, ay1] = anchor ?? [width, mid - h / 2, width, mid - h / 2];
@@ -377,14 +563,15 @@ function placeAnswer({ width, height, anchor, view, w, h, strokes = [], text = [
     const covers = (rects) => rects.reduce((n, o) => n + overlap(r, o), 0);
     const cx = (x + w / 2) - (ax0 + ax1) / 2;
     const cy = (y + h / 2) - (ay0 + ay1) / 2;
-    const score = 1000 * covers(strokes) + 3 * covers(cards) + covers(text) + 20 * Math.hypot(cx, cy) + order;
+    const score = 1000 * covers(marks) + 3 * covers(cards) + covers(text) + 20 * Math.hypot(cx, cy) + order;
     if (!best || score < best.score) best = { x: round(x), y: round(y), score };
   });
   return best;
 }
 
-// The part of the paper on screen with the ink on it, as one JPEG (base64): the visible part of each page, stacked.
-async function capture(shown) {
+// The part of the paper on screen with the ink and text boxes on it, as one JPEG (base64): the visible part of each
+// page, stacked.
+async function capture(state, shown) {
   const parts = shown.map(({ page, top, bottom }) => ({ page, top, bottom, height: bottom - top }));
   const totalW = Math.max(...parts.map((p) => p.page.width));
   const totalH = parts.reduce((n, p) => n + p.height, 0) + 4 * (parts.length - 1);
@@ -406,18 +593,44 @@ async function capture(shown) {
     ctx.globalCompositeOperation = "multiply";
     ctx.drawImage(inkImage, 0, p.top * (inkImage.height / p.page.height), inkImage.width, p.height * (inkImage.height / p.page.height), 0, y, dw, dh);
     ctx.globalCompositeOperation = "source-over";
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, y, dw, dh);
+    ctx.clip();
+    for (const t of state.texts.filter((t) => t.page === p.page.i)) drawText(ctx, t, scale, y - p.top * scale);
+    ctx.restore();
     y += dh;
     if (p !== parts.at(-1)) (ctx.fillStyle = "#999"), ctx.fillRect(0, y + scale, out.width, 2 * scale), (y += 4 * scale);
   }
   return out.toDataURL("image/jpeg", 0.88).split(",")[1];
 }
 
+// A text box, wrapped as on the page, onto the capture (`dy`: where the page's top is on the canvas).
+function drawText(ctx, t, scale, dy) {
+  const size = TEXT_SIZE * scale;
+  ctx.font = `${size}px ${getComputedStyle(document.documentElement).getPropertyValue("--hand")}`;
+  ctx.fillStyle = t.color;
+  ctx.textBaseline = "top";
+  const maxW = t.w * scale;
+  let line = 0;
+  for (const para of t.text.split("\n")) {
+    let cur = "";
+    for (const word of para.split(" ")) {
+      const next = cur ? `${cur} ${word}` : word;
+      if (cur && ctx.measureText(next).width > maxW) ctx.fillText(cur, t.x * scale, dy + t.y * scale + line++ * size * 1.25), (cur = word);
+      else cur = next;
+    }
+    ctx.fillText(cur, t.x * scale, dy + t.y * scale + line++ * size * 1.25);
+  }
+}
+
 function svgImage(svg, width, height) {
   const copy = svg.cloneNode(true);
-  copy.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  copy.setAttribute("xmlns", SVG);
   copy.setAttribute("width", width * 2);
   copy.setAttribute("height", height * 2);
   copy.querySelectorAll(".highlighter").forEach((p) => p.setAttribute("fill-opacity", "0.4"));
+  copy.querySelectorAll(".lasso").forEach((p) => p.remove());
   const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)], { type: "image/svg+xml" }));
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -445,9 +658,9 @@ function showCard(state, card) {
   renderCard(card);
 }
 
-function hideCard(card) {
-  card.el?.remove();
-  card.el = null;
+function hideEl(x) {
+  x.el?.remove();
+  x.el = null;
 }
 
 function renderCard(card) {
@@ -520,6 +733,31 @@ function bounds(s) {
   return [Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) + pad, Math.max(...ys) + pad];
 }
 
+// A text box's rect in PDF points, measured on the page (its height depends on how its text wraps).
+function textRect(t) {
+  const page = ink.pages.get(t.page);
+  if (!t.el || !page?.el.clientWidth) return [t.x, t.y, t.x + t.w, t.y + TEXT_SIZE * 1.25];
+  const k = page.width / page.el.clientWidth;
+  return [t.x, t.y, t.x + t.el.offsetWidth * k, t.y + t.el.offsetHeight * k];
+}
+
+function cardRect(c) {
+  const page = ink.pages.get(c.page);
+  const h = c.el && page?.el.clientWidth ? c.el.offsetHeight * (page.width / page.el.clientWidth) : CARD_HEIGHT;
+  return [c.x, c.y, c.x + c.w, c.y + h];
+}
+
+function inPolygon([x, y], poly) {
+  let isIn = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i];
+    const [xj, yj] = poly[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) isIn = !isIn;
+  }
+  return isIn;
+}
+
+const inside = ([x0, y0, x1, y1], [x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
 const union = (rects) => [Math.min(...rects.map((r) => r[0])), Math.min(...rects.map((r) => r[1])), Math.max(...rects.map((r) => r[2])), Math.max(...rects.map((r) => r[3]))];
 const overlap = (a, b) => Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
 const pct = (v, total) => `${(v / total) * 100}%`;
