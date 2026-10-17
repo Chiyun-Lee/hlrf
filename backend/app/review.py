@@ -520,10 +520,10 @@ establish); ## Main problems (numbered, most important first, each with its evid
 ## Bottom line (what holds, what doesn't, what would settle it); ## Evidence (paths in the work dir, or links, behind
 each point).
 
-pins.json: use the paper-pins skill, covering every target in targets.json. Set `reviewed` to what the pins rest on
-(e.g. "AI review of arXiv:<id>: the authors' code re-run and the claims tested, <date>") and `verdict` to the review's
-bottom line in one sentence. Check it with the `check_pins` tool (not a command line) and fix it until check_pins
-returns ok. Then end with the verdict.
+pins.json: write it with the paper-pins skill, giving every target in targets.json its pins. Set `reviewed` to what
+the pins rest on (what was done, then the date) and `verdict` to the review's bottom line in 1-2 sentences. The
+skill's `python -m app.pins` commands are for interactive use: here targets.json lists the targets, and the
+`check_pins` tool checks pins.json. Fix pins.json until check_pins returns ok, then end with the verdict.
 """
 
 
