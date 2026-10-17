@@ -618,6 +618,7 @@ def options(run: Run, resume: str | None = None, **extra):
         forward_subagent_text=True,  # helpers' text in the live view too
         resume=resume,
         stderr=lambda line: log.info("claude: %s", line),
+        max_buffer_size=llm.MAX_MESSAGE,  # big tool results (PDF pages, images, logs)
         env={
             # As in llm.ask_claude_code: no memory writes, none of your claude.ai connectors.
             "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",

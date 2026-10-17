@@ -25,7 +25,7 @@ async function revisionPage() {
     <section class="rv-start">
       ${
         total
-          ? `<button class="quiz-go" id="review">${r.due ? `Start review · ${r.due} due` : "Practise anyway"}</button>
+          ? `<button class="quiz-go" id="start-review">${r.due ? `Start review · ${r.due} due` : "Practise anyway"}</button>
              <p class="muted">${r.due ? "Ten questions, mixed across your papers, the ones you're about to forget first." : "Nothing's due: you're all caught up! Practise your weakest questions anyway."}</p>`
           : `<p class="rv-empty">Your revision deck is empty. Take a <b>Quiz me</b> on a paper, or add questions below, and they'll come back here to keep them fresh.</p>`
       }
@@ -33,12 +33,12 @@ async function revisionPage() {
     <h2 class="hand">Your papers</h2>
     <div class="rv-papers">${r.papers.map(paperRow).join("") || `<p class="muted">Save a paper with the extension to get started.</p>`}</div>`;
 
-  app.querySelector("#review")?.addEventListener("click", () => review(null));
+  app.querySelector("#start-review")?.addEventListener("click", () => revise(null));
   app.querySelector(".rv-papers").addEventListener("click", async (e) => {
     const button = e.target.closest("button");
     if (!button) return;
     const id = +button.closest(".rv-paper").dataset.id;
-    if (button.dataset.act === "practise") return review([id]);
+    if (button.dataset.act === "practise") return revise([id]);
     // Add questions: a quiz at the current reading level if the paper has an abstract there, else any it has.
     const p = r.papers.find((p) => p.id === id);
     const lv = p.abstract_levels.includes(level) ? level : p.abstract_levels[0];
@@ -74,7 +74,7 @@ function paperRow(p) {
 
 // A review in a lesson overlay: due questions first, across `paperIds` (null: every paper). Back on the page, the
 // stats refresh when the lesson closes.
-async function review(paperIds) {
+async function revise(paperIds) {
   const overlay = openOverlay(`<p class="overlay-status">Shuffling your deck…</p>`);
   overlay.classList.add("quiz-overlay");
   new MutationObserver((_, obs) => !overlay.isConnected && (obs.disconnect(), location.hash === "#/revision" && route())).observe(document.body, { childList: true });
@@ -85,7 +85,7 @@ async function review(paperIds) {
       body: JSON.stringify({ paper_ids: paperIds }),
     });
     if (!questions.length) throw new Error("no questions yet");
-    runQuiz(overlay, questions, { resultUrl: "/revision/result", showPaper: true, again: () => (overlay.remove(), review(paperIds)) });
+    runQuiz(overlay, questions, { resultUrl: "/revision/result", showPaper: true, again: () => (overlay.remove(), revise(paperIds)) });
   } catch (e) {
     overlay.querySelector(".overlay-status").textContent = `Couldn't start a review: ${e.message}`;
   }

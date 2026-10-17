@@ -100,6 +100,9 @@ def answer_text(content: list) -> str:
 
 # An empty working directory, so Claude Code finds no project files, CLAUDE.md or settings to pick up.
 CLAUDE_CODE_CWD = Path(tempfile.gettempdir()) / "human-pretraining-claude-code"
+# Largest single message we take from Claude Code. The SDK's default (1 MB) is smaller than some tool results (a
+# PDF page or an image read whole), and a bigger one ends the run with CLIJSONDecodeError.
+MAX_MESSAGE = 64 * 2**20
 
 
 def _text(content: str | list) -> str:
@@ -135,6 +138,7 @@ async def ask_claude_code(schema: type[T], system: str, prompt: str | list, mode
         setting_sources=[],
         strict_mcp_config=True,
         cwd=CLAUDE_CODE_CWD,
+        max_buffer_size=MAX_MESSAGE,
         env={"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1", "ENABLE_CLAUDEAI_MCP_SERVERS": "false"},
     )
     blocks = single_turn(as_messages(prompt))

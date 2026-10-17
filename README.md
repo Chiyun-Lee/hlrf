@@ -11,9 +11,10 @@ On the app, the user can view an interactive version of the paper's PDF, where t
 ```sh
 cd backend
 cp .env.example .env   # add your ANTHROPIC_API_KEY
-uv sync
-uv run uvicorn app.main:app --reload
+uv sync --extra claude-code
+uv run --extra claude-code uvicorn app.main:app --reload
 ```
+Keep `--extra claude-code` on every `uv sync` and `uv run`: without it uv uninstalls the Claude Agent SDK, and the agent review (and `LLM_BACKEND=claude-code`) stop working.
 `POST /papers {"url": ..., "meta": {...}}` downloads the paper, extracts its text page by page (`app/extract.py`), and makes one Claude call to read the title and authors (including equal-contribution and corresponding markers). The record (`app/schemas.py`) is stored in SQLite. `GET /papers/{id}` returns it. Set `EXTRACT_MODEL` / `EXTRACT_EFFORT` in `.env` to trade speed for accuracy.
 
 **Extension**:
@@ -34,4 +35,4 @@ Then open `chrome://extensions`, turn on Developer mode, choose "Load unpacked" 
 
 **Journal club** (`web/club.js`, `backend/app/club.py`, `backend/journal_club/`, the fifth tab): the papers of a *card set* become PhD-student agents. In one night they map every pair of papers (agree / disagree / shared limitation), debate the clashes under a PI and write ranked research directions, each backed by verbatim quotes that are string-checked against the papers (the *quote gate*). **Start a night** fills itself in: pick a card set, take one of the starting questions or write your own, and it suggests a free name and says how long the night will take (`estimate_night_s` in `app/club.py`, measured at about 6.5 minutes for 9 papers with the Claude Code login). **Make a card set from your library** reads 2 to 16 saved papers into cards (one Claude call each); two card sets and a real night on DESI cosmology papers ship with the app (`backend/journal_club/examples/`), so the tab has something to show before any Claude call. A night's page is a projection of its append-only `events.jsonl` (`journal_club/state.py`): the overview, the pair map, the directions, the disputes (folded to the PI's ruling) and the papers, with a bar to jump between them. Click any paper to dim everything that doesn't involve it. While a night runs the page shows the step, its count, the time so far and the time left, polled live; **Minutes** opens the night's minutes rendered in the app. A **backtest** (hold out the papers dated on or after T and score the directions against them, next to a one-call baseline, with a judge on a different model) runs from the command line only (`uv run jc backtest`) and isn't shown in the tab. Runs and card sets live in `JOURNAL_CLUB_DIR` (default `~/.human-pretraining/journal-club`); a run that stopped is resumed by starting it again, with no LLM calls for the steps already in its archive. The club follows `LLM_BACKEND` (API key or your Claude subscription); `JC_MODEL` / `JC_JUDGE_MODEL` pick its models and `JC_LLM=mock` runs the deterministic offline backend in seconds, for UI work. The same engine runs from the command line (`uv run jc --help` in `backend/`: ingest PDFs, run, backtest, minutes). The contract is [backend/journal_club/DESIGN.md](backend/journal_club/DESIGN.md); the figures and research notes are in [docs/journal-club/](docs/journal-club/).
 
-**Tests**: `cd backend && uv run pytest` (add `RUN_LIVE=1` to call Claude end to end; `JC_LIVE=1` for the journal club's live tests).
+**Tests**: `cd backend && uv run --extra claude-code pytest` (add `RUN_LIVE=1` to call Claude end to end; `JC_LIVE=1` for the journal club's live tests).
