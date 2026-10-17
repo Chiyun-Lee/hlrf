@@ -20,7 +20,7 @@ from pathlib import Path
 
 import httpx
 
-from . import arxiv, biorxiv, db, profiles, ranker, zotero
+from . import arxiv, biorxiv, db, profiles, published, ranker, zotero
 from .schemas import ArxivPaper
 
 log = logging.getLogger(__name__)
@@ -189,9 +189,11 @@ def feedback(paper_id: str, kind: str) -> dict:
 
 
 def add_mine(text: str) -> dict:
-    """Add your own papers: arXiv ids or links, or an INSPIRE profile link, which is then re-checked daily for new
-    papers. Returns which were found."""
-    ids = ids_in(text)
+    """Add your own papers: arXiv ids or links; DOIs or links to the published papers (app/published.py), as their
+    arXiv version when there is one; or an INSPIRE profile link, which is then re-checked daily for new papers.
+    Returns which were found."""
+    pasted = published.find(text)
+    ids = list(dict.fromkeys(ids_in(text) + pasted.arxiv))
     profile = profiles.find(text)
     from_profile, off_arxiv = [], 0
     if profile:
@@ -200,22 +202,41 @@ def add_mine(text: str) -> dict:
         except profiles.ProfileError as e:
             raise FeedError("profile", str(e))
         link(profile)
-    if not ids and not from_profile:
+    if not ids and not from_profile and not pasted:
         raise FeedError(
             "bad_request",
             f"None of the papers on your {profiles.label(profile)} profile are on arXiv."
             if profile
-            else "Nothing to add. Paste your INSPIRE profile link, or arXiv ids or links.",
+            else "Nothing to add. Paste your INSPIRE profile link, arXiv ids, or DOIs or links of your published papers.",
         )
+    # DOIs For you already has (a bioRxiv paper, or one added before) are yours as they are; the rest are looked up.
+    stored = State.load().stored
+    known = [d for d in pasted.dois if d in stored]
+    pasted.dois = [d for d in pasted.dois if d not in stored]
+    resolved = published.resolve_all(pasted)
+    via_arxiv = [r.arxiv for r in resolved if r.arxiv]
+    journal = [r.paper for r in resolved if r.paper]
     removed = set(json.loads(db.get_meta("mine_removed") or "[]"))
-    db.set_meta("mine_removed", json.dumps(sorted(removed - set(ids))))  # pasting an id again brings it back
-    found, unknown = store_mine(ids + [i for i in from_profile if i not in removed])
+    again = set(ids) | set(via_arxiv) | set(known) | {p.id for p in journal}
+    db.set_meta("mine_removed", json.dumps(sorted(removed - again)))  # pasting a paper again brings it back
+    db.save_arxiv(journal, listed=False)
+    for doi in known + [p.id for p in journal]:
+        db.set_signal(doi, "mine")
+    found, unknown = store_mine(ids + via_arxiv + [i for i in from_profile if i not in removed])
+    problems = lambda kind: [r.given for r in resolved if r.problem == kind]  # noqa: E731
     return {
-        "added": found,
+        "added": found + known + [p.id for p in journal],
         "unknown": [i for i in unknown if i in ids],
         "profile": profiles.label(profile) if profile else None,
         "from_profile": len(from_profile),
         "off_arxiv": off_arxiv,
+        "published": {
+            "added": len(known) + len(journal) + len([i for i in via_arxiv if i in found]),
+            "on_arxiv": len([i for i in via_arxiv if i in found]),
+            "not_found": problems("not_found"),
+            "unreadable": problems("unreadable"),
+            "unreachable": problems("unreachable"),
+        },
     }
 
 

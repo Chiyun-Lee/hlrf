@@ -312,3 +312,116 @@ def test_the_day_being_ranked_is_never_a_training_example(fresh, monkeypatch):
     monkeypatch.setattr(feed.ranker, "train", train)
     client.get("/feed?day=2026-10-16")
     assert FRIDAY not in seen["pool_days"] and THURSDAY in seen["pool_days"]
+
+
+# --- Your published papers: DOIs and journal links ---
+
+from app import published  # noqa: E402
+
+JOURNAL = "10.1093/mnras/stad1234"
+WORK = {
+    "display_name": "Galaxy bispectrum constraints from a journal",
+    "publication_date": "2024-03-05",
+    "authorships": [{"author": {"display_name": "A. Author"}}, {"author": {"display_name": "Jane Doe"}}],
+    "abstract_inverted_index": {"We": [0], "measure": [1], "the": [2], "bispectrum.": [3]},
+    "locations": [{"landing_page_url": f"https://doi.org/{JOURNAL}", "pdf_url": None}],
+    "primary_location": {"source": {"display_name": "Monthly Notices of the Royal Astronomical Society"}},
+}
+OUP = "https://academic.oup.com/mnras/article/527/1/123/7330000"
+ELSEVIER = "https://www.sciencedirect.com/science/article/pii/S0370269324001234"
+
+
+def fake_lookups(monkeypatch, on_arxiv=(), works=(), pages=()):
+    """published's lookups: INSPIRE knows {doi: arXiv id}, OpenAlex {doi: work}, and pages {url: (status, html)}.
+    Returns every URL asked for."""
+    on_arxiv, works, pages = dict(on_arxiv), dict(works), dict(pages)
+    asked = []
+
+    def respond(url, status, body):
+        kwargs = {"json": body} if isinstance(body, dict) else {"text": body, "headers": {"content-type": "text/html"}}
+        return httpx.Response(status, request=httpx.Request("GET", url), **kwargs)
+
+    def get(url, params=None):
+        asked.append(url)
+        if url.startswith("https://inspirehep.net/api/literature"):
+            doi = params["q"].split('"')[1]
+            return respond(url, 200, {"hits": {"hits": [{"metadata": {"arxiv_eprints": [{"value": on_arxiv[doi]}]}}] if doi in on_arxiv else []}})
+        if url.startswith("https://api.openalex.org/works/https://doi.org/"):
+            doi = url.removeprefix("https://api.openalex.org/works/https://doi.org/")
+            return respond(url, 200, works[doi]) if doi in works else respond(url, 404, {"error": "not found"})
+        if url.startswith("https://api.crossref.org/works/"):
+            return respond(url, 404, {})
+        raise AssertionError(f"unexpected lookup {url}")
+
+    def get_page(url):
+        asked.append(url)
+        return respond(url, *pages[url])
+
+    monkeypatch.setattr(published.http, "get", get)
+    monkeypatch.setattr(published.pages, "get", get_page)
+    return asked
+
+
+def stored_paper(paper_id):
+    return next(p for p, _ in db.all_arxiv() if p.id == paper_id)
+
+
+def test_dois_and_links_are_found_in_pasted_text():
+    text = (
+        "see 10.1103/PhysRevD.110.023501. and (doi:10.1007/JHEP01(2024)123), "
+        "https://iopscience.iop.org/article/10.3847/1538-4357/ad1234/pdf https://doi.org/10.48550/arXiv.2207.01501 "
+        "https://www.nature.com/articles/s41550-024-02225-0 https://www.biorxiv.org/content/10.1101/2024.01.01.123456v2.full "
+        "https://onlinelibrary.wiley.com/doi/10.1002%2Fanie.202400001?af=R https://inspirehep.net/literature/2612345 "
+        f"{OUP} https://arxiv.org/abs/2207.01502 https://inspirehep.net/authors/1960608"
+    )
+    found = published.find(text)
+    assert found.dois == [
+        "10.3847/1538-4357/ad1234",  # without the /pdf after it
+        "10.1038/s41550-024-02225-0",  # from the nature.com address
+        "10.1101/2024.01.01.123456",  # without bioRxiv's version and .full
+        "10.1002/anie.202400001",  # decoded, without the query
+        "10.1103/physrevd.110.023501",  # without the full stop; DOIs are case-insensitive
+        "10.1007/jhep01(2024)123",  # its own brackets kept, the sentence's dropped
+    ]
+    assert (found.arxiv, found.records, found.links) == (["2207.01501"], ["2612345"], [OUP])
+    assert feed.ids_in(text) == ["2207.01502"]  # no arXiv ids read out of the DOIs
+
+
+def test_published_papers_join_your_papers(fresh, monkeypatch):
+    fake_lookups(
+        monkeypatch,
+        on_arxiv={"10.1103/physrevd.110.023501": "2207.01500"},
+        works={JOURNAL: WORK, "10.1093/mnras/stad9999": {**WORK, "display_name": "Found from its page"}},
+        pages={OUP: (200, '<meta name="citation_doi" content="10.1093/mnras/stad9999">'), ELSEVIER: (403, "Just a moment...")},
+    )
+    text = f"10.1103/PhysRevD.110.023501 https://doi.org/10.1093/MNRAS/stad1234 10.9999/nothing {OUP} {ELSEVIER}"
+    res = client.post("/feed/mine", json={"text": text}).json()
+    assert res["published"] == {"added": 3, "on_arxiv": 1, "not_found": ["10.9999/nothing"], "unreadable": [ELSEVIER], "unreachable": []}
+
+    data = client.get("/feed").json()
+    assert {p["id"] for p in data["mine"]} == {"2207.01500", JOURNAL, "10.1093/mnras/stad9999"}  # the arXiv version for the first
+    assert data["method"] == "model"  # three of your papers: the list is ranked by them
+    paper = stored_paper(JOURNAL)
+    assert (paper.source, paper.abstract, paper.authors) == ("doi", "We measure the bispectrum.", ["A. Author", "Jane Doe"])
+    assert (paper.journal_ref, paper.abs_url) == ("Monthly Notices of the Royal Astronomical Society", f"https://doi.org/{JOURNAL}")
+    assert JOURNAL in json.dumps(feed.profile()["mine"])  # and the summaries' "why you'd care" read it
+
+    assert client.delete("/feed/mine/10.1093%2Fmnras%2Fstad1234").status_code == 204
+    assert JOURNAL not in {p["id"] for p in client.get("/feed").json()["mine"]}
+
+
+def test_a_doi_for_you_already_has_keeps_its_record(fresh, monkeypatch):
+    client.put("/feed/sources", json={"biorxiv": ["Neuroscience"]})
+    client.get("/feed")
+    asked = fake_lookups(monkeypatch)
+    res = client.post("/feed/mine", json={"text": "https://www.biorxiv.org/content/10.64898/2026.10.15.000001v1"}).json()
+    assert res["published"]["added"] == 1 and asked == []  # no lookups
+    assert stored_paper("10.64898/2026.10.15.000001").source == "biorxiv"  # still in the day's papers
+
+
+def test_links_to_this_machine_or_a_private_network_are_refused():
+    for url in ("http://127.0.0.1:8000/papers", "http://localhost/admin", "http://192.168.1.1/", "file:///etc/passwd"):
+        with pytest.raises(published.PageError):
+            published.check_public(url)
+    published.check_public("https://8.8.8.8/")  # a public address is fine
+    assert published.resolve_link("http://127.0.0.1:8000/papers").problem == "unreadable"  # refused before connecting
