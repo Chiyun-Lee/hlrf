@@ -1,4 +1,4 @@
-"""One structured Claude call: send a prompt, get a validated Pydantic object back.
+"""One structured Claude call: send a prompt (or a conversation), get a validated Pydantic object back.
 
 Two ways to reach Claude, chosen with LLM_BACKEND in backend/.env:
 - "api" (the default): the Anthropic API, billed to ANTHROPIC_API_KEY.
@@ -17,7 +17,7 @@ from typing import TypeVar
 
 import anthropic
 from dotenv import load_dotenv
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 load_dotenv()
 log = logging.getLogger(__name__)
@@ -44,15 +44,35 @@ def ready() -> str | None:
     return None
 
 
-def ask(schema: type[T], system: str, prompt: str, model: str, effort: str) -> T:
+def as_messages(prompt: str | list) -> list:
+    """A user message (text, or content blocks such as images + text), or already a full list of messages."""
+    return prompt if isinstance(prompt, list) and prompt and "role" in prompt[0] else [{"role": "user", "content": prompt}]
+
+
+def ask(schema: type[T], system: str, prompt: str | list, model: str, effort: str, tries: int = 2) -> T:
+    """`prompt` is a user message (text, or content blocks such as images + text) or a full list of messages.
+
+    An answer that is refused, cut short or doesn't fit `schema` is retried once (`tries`) before giving up: these are
+    usually one-offs (a safety classifier misfiring on a biology paper, say)."""
+    messages = as_messages(prompt)
+    for attempt in range(1, tries + 1):
+        try:
+            return _ask_once(schema, system, messages, model, effort)
+        except (RuntimeError, ValidationError) as e:
+            if attempt == tries:
+                raise
+            log.warning("retrying %s after: %s", schema.__name__, str(e)[:200])
+
+
+def _ask_once(schema: type[T], system: str, messages: list, model: str, effort: str) -> T:
     if BACKEND == "claude-code":
         # Callers are sync FastAPI endpoints running in worker threads, which have no event loop of their own.
-        return asyncio.run(ask_claude_code(schema, system, prompt, model, effort))
+        return asyncio.run(ask_claude_code(schema, system, messages, model, effort))
     with client.beta.messages.stream(
         model=model,
         max_tokens=64000,  # thinking counts too, so leave room
         system=system,
-        messages=[{"role": "user", "content": prompt}],
+        messages=messages,
         thinking={"type": "adaptive"},
         # Parsed below rather than via output_format, which raises mid-stream before stop_reason is known.
         output_config={"effort": effort, "format": {"type": "json_schema", "schema": anthropic.transform_schema(schema)}},
@@ -82,7 +102,23 @@ def answer_text(content: list) -> str:
 CLAUDE_CODE_CWD = Path(tempfile.gettempdir()) / "human-pretraining-claude-code"
 
 
-async def ask_claude_code(schema: type[T], system: str, prompt: str, model: str, effort: str) -> T:
+def _text(content: str | list) -> str:
+    return content if isinstance(content, str) else "\n".join(b["text"] for b in content if b.get("type") == "text")
+
+
+def single_turn(messages: list) -> list:
+    """Content blocks for one user turn. Claude Code takes user turns only, so the earlier turns of a conversation
+    (the tutor chat) go in front of the newest message as a transcript."""
+    *history, last = messages
+    content = last["content"]
+    blocks = list(content) if isinstance(content, list) else [{"type": "text", "text": content}]
+    if history:
+        transcript = "\n\n".join(f"{'Reader' if m['role'] == 'user' else 'You'}: {_text(m['content'])}" for m in history)
+        blocks.insert(0, {"type": "text", "text": f"The conversation so far:\n\n{transcript}\n\nThe reader's new message:"})
+    return blocks
+
+
+async def ask_claude_code(schema: type[T], system: str, prompt: str | list, model: str, effort: str) -> T:
     """The same call through Claude Code on your subscription, set up to behave like the API call: only our system
     prompt, no tools, skills, MCP servers, settings or memory, and the same JSON schema enforced."""
     from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
@@ -101,9 +137,18 @@ async def ask_claude_code(schema: type[T], system: str, prompt: str, model: str,
         cwd=CLAUDE_CODE_CWD,
         env={"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1", "ENABLE_CLAUDEAI_MCP_SERVERS": "false"},
     )
+    blocks = single_turn(as_messages(prompt))
+    if all(b.get("type") == "text" for b in blocks):
+        turn = "\n\n".join(b["text"] for b in blocks)
+    else:  # images (e.g. a page with figures) need the SDK's streaming input
+
+        async def stream():
+            yield {"type": "user", "message": {"role": "user", "content": blocks}}
+
+        turn = stream()
     result = None
     try:
-        async for message in query(prompt=prompt, options=options):
+        async for message in query(prompt=turn, options=options):
             if isinstance(message, ResultMessage):
                 result = message
     except Exception as e:
