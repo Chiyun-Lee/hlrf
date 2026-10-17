@@ -1,5 +1,6 @@
 """Shared data contract between the extractor, the API and the paper browser."""
 
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, field_validator
@@ -64,6 +65,42 @@ class Note(BaseModel):
 
 class PageSummary(BaseModel):
     notes: list[Note]
+
+
+class Pitch(BaseModel):
+    """For you's summary of a new arXiv paper, for one reader (app/pitch.py)."""
+
+    id: str  # arXiv id
+    what: str  # what the paper does and finds
+    why: str  # why this reader should care, given their own work
+
+
+class Pitches(BaseModel):
+    pitches: list[Pitch]
+
+
+class ArxivPaper(BaseModel):
+    """A new arXiv paper as For you stores and ranks it (app/arxiv.py)."""
+
+    id: str  # without the version: 2410.01234 or hep-th/0101001
+    version: int = 1
+    title: str
+    abstract: str
+    authors: list[str]
+    categories: list[str]  # primary first
+    published: datetime
+    listing_date: date  # the day it appears in arXiv's daily "new" listing
+    comment: str | None = None
+    journal_ref: str | None = None
+    doi: str | None = None
+
+    @property
+    def abs_url(self) -> str:
+        return f"https://arxiv.org/abs/{self.id}"
+
+    @property
+    def pdf_url(self) -> str:
+        return f"https://arxiv.org/pdf/{self.id}"
 
 
 class TutorReply(BaseModel):
