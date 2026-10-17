@@ -2,6 +2,7 @@
 //   #/            library of saved papers
 //   #/papers/:id  one paper's header and the reader (reader.js)
 //   #/for-you     the latest arXiv listing ranked for you (foryou.js)
+//   #/revision    Revision: Duolingo-style reviews across papers (revision.js)
 //   #/me          My learning: what the app has learned about you, your questions and quizzes
 // To add a view: write a function that renders into `app` and add a route below.
 
@@ -32,13 +33,14 @@ const routes = [
   [/^#?\/?$/, library],
   [/^#\/papers\/(\d+)$/, paper],
   [/^#\/for-you(?:\/(\d{4}-\d{2}-\d{2}))?$/, forYou],
+  [/^#\/revision$/, revisionPage],
   [/^#\/me$/, me],
 ];
 
 async function route() {
   const [re, view] = routes.find(([re]) => re.test(location.hash)) ?? [/$/, notFound];
   closeChat();
-  const tab = location.hash.startsWith("#/for-you") ? "for-you" : location.hash === "#/me" ? "me" : "library";
+  const tab = location.hash.startsWith("#/for-you") ? "for-you" : location.hash === "#/me" ? "me" : location.hash === "#/revision" ? "revision" : "library";
   document.querySelectorAll(".tabs a").forEach((a) => a.toggleAttribute("aria-current", a.dataset.tab === tab));
   app.innerHTML = `<p class="muted">Loading…</p>`;
   try {
@@ -168,7 +170,7 @@ const FACT_KINDS = {
 async function me() {
   const { profile, events } = await api("/me");
   const questions = events.filter((e) => e.kind === "question");
-  const quizzes = events.filter((e) => e.kind === "quiz");
+  const quizzes = events.filter((e) => e.kind === "quiz" || e.kind === "revision");
   const byPaper = Object.groupBy(questions, (e) => e.paper ?? "(deleted paper)");
   app.innerHTML = `
     <h1 class="hand">My learning</h1>
@@ -197,7 +199,7 @@ async function me() {
       .join("") || `<p class="muted">Highlight anything in a paper and click Ask to start.</p>`}
 
     <h2 class="hand">Quizzes</h2>
-    ${quizzes.map((e) => `<div class="history-quiz"><b>${e.data.right_first_time}/${e.data.total}</b> first time · ${esc(e.paper ?? "(deleted paper)")} <span class="muted small">${esc(e.created.slice(0, 16))}</span>${e.data.missed.length ? `<div class="muted small">Missed: ${e.data.missed.map((m) => esc(m.prompt)).join(" · ")}</div>` : ""}</div>`).join("") || `<p class="muted">No quizzes yet: make a graphical abstract, then Quiz me.</p>`}
+    ${quizzes.map((e) => `<div class="history-quiz"><b>${e.data.right_first_time}/${e.data.total}</b> first time · ${esc(e.kind === "revision" ? "Revision, across papers" : e.paper ?? "(deleted paper)")} <span class="muted small">${esc(e.created.slice(0, 16))}</span>${e.data.missed.length ? `<div class="muted small">Missed: ${e.data.missed.map((m) => esc(m.prompt)).join(" · ")}</div>` : ""}</div>`).join("") || `<p class="muted">No quizzes yet: make a graphical abstract, then Quiz me.</p>`}
 
     <p class="forget"><button class="btn" id="forget">Forget everything</button></p>`;
 

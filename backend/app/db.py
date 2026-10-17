@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 import json
 
-from .schemas import ArxivPaper, GraphicalAbstract, LearnerProfile, PageSummary, Paper, Pitch, SummaryCards
+from .schemas import ArxivPaper, GraphicalAbstract, LearnerProfile, PageSummary, Paper, Pitch, QuizQuestion, SummaryCards
 
 DB_PATH = os.environ.get("PAPERS_DB", Path(__file__).parent.parent / "papers.db")  # override for tests/demos
 
@@ -41,6 +41,12 @@ leveled_table("abstracts", "CREATE TABLE IF NOT EXISTS abstracts (paper_id INTEG
 # Learning memory (app/memory.py): what the reader did, and the profile distilled from it. One reader per install.
 conn.execute("CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, paper_id INTEGER, kind TEXT, data TEXT, created TEXT DEFAULT CURRENT_TIMESTAMP)")
 conn.execute("CREATE TABLE IF NOT EXISTS profile (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT)")
+# Revision (app/revision.py): every quiz question, with its spaced-repetition box and due day, and XP per day.
+conn.execute(
+    "CREATE TABLE IF NOT EXISTS questions (id INTEGER PRIMARY KEY, paper_id INTEGER, level TEXT, prompt TEXT, data TEXT,"
+    " box INTEGER DEFAULT 0, due TEXT, UNIQUE (paper_id, prompt))"
+)
+conn.execute("CREATE TABLE IF NOT EXISTS xp (day TEXT PRIMARY KEY, points INTEGER)")
 leveled_table("cards", "CREATE TABLE IF NOT EXISTS cards (paper_id INTEGER, data TEXT, level TEXT, PRIMARY KEY (paper_id, level))")
 conn.execute("CREATE TABLE IF NOT EXISTS pitches (arxiv_id TEXT PRIMARY KEY, data TEXT)")
 # listed: came from a daily listing (rather than fetched by id, like your own older papers), so it's in a day's feed
@@ -93,6 +99,7 @@ def delete(paper_id: int) -> bool:
         conn.execute("DELETE FROM summaries WHERE paper_id = ?", (paper_id,))
         conn.execute("DELETE FROM abstracts WHERE paper_id = ?", (paper_id,))
         conn.execute("DELETE FROM cards WHERE paper_id = ?", (paper_id,))
+        conn.execute("DELETE FROM questions WHERE paper_id = ?", (paper_id,))
     return cur.rowcount > 0
 
 
@@ -166,6 +173,51 @@ def forget_everything() -> None:
     with lock, conn:
         conn.execute("DELETE FROM events")
         conn.execute("DELETE FROM profile")
+
+
+def add_questions(paper_id: int, level: str, questions: list[QuizQuestion], due: str) -> list[int]:
+    """Bank a quiz's questions (a question already banked for the paper keeps its progress); returns their ids."""
+    with lock, conn:
+        conn.executemany(
+            "INSERT OR IGNORE INTO questions (paper_id, level, prompt, data, due) VALUES (?, ?, ?, ?, ?)",
+            [(paper_id, level, q.prompt, q.model_dump_json(), due) for q in questions],
+        )
+        return [
+            conn.execute("SELECT id FROM questions WHERE paper_id = ? AND prompt = ?", (paper_id, q.prompt)).fetchone()[0]
+            for q in questions
+        ]
+
+
+def _question(row) -> dict:
+    i, pid, level, data, box, due = row
+    return {"id": i, "paper_id": pid, "level": level, "question": QuizQuestion.model_validate_json(data), "box": box, "due": due}
+
+
+def questions() -> list[dict]:
+    with lock:
+        rows = conn.execute("SELECT id, paper_id, level, data, box, due FROM questions").fetchall()
+    return [_question(r) for r in rows]
+
+
+def get_question(question_id: int) -> dict | None:
+    with lock:
+        row = conn.execute("SELECT id, paper_id, level, data, box, due FROM questions WHERE id = ?", (question_id,)).fetchone()
+    return _question(row) if row else None
+
+
+def set_question_progress(question_id: int, box: int, due: str) -> None:
+    with lock, conn:
+        conn.execute("UPDATE questions SET box = ?, due = ? WHERE id = ?", (box, due, question_id))
+
+
+def add_xp(day: str, points: int) -> None:
+    with lock, conn:
+        conn.execute("INSERT INTO xp VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET points = points + excluded.points", (day, points))
+
+
+def xp_days() -> dict[str, int]:
+    with lock:
+        return dict(conn.execute("SELECT day, points FROM xp"))
 
 
 def get_pitches(arxiv_ids: list[str]) -> dict[str, Pitch]:

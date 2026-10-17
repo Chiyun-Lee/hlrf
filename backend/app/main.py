@@ -14,9 +14,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import abstract as graphical
-from . import cards, db, extract, feed, llm, memory, pins, pitch, proof, quiz, summarize, tutor
+from . import cards, db, extract, feed, llm, memory, pins, pitch, proof, quiz, revision, summarize, tutor
 from .levels import DEFAULT, Level
-from .schemas import GraphicalAbstract, LearnerProfile, Note, PageSummary, Paper, PaperPins, Pitch, Proof, Quiz, SummaryCards
+from .schemas import GraphicalAbstract, LearnerProfile, Note, PageSummary, Paper, PaperPins, Pitch, Proof, SummaryCards
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
@@ -186,13 +186,21 @@ def make_cards(paper_id: int, level: Level = DEFAULT) -> SummaryCards:
 
 
 @app.post("/papers/{paper_id}/quiz")
-def make_quiz(paper_id: int, level: Level = DEFAULT) -> Quiz:
-    """A fresh quiz each time, from the notes and the graphical abstract."""
+def make_quiz(paper_id: int, level: Level = DEFAULT) -> dict:
+    """A fresh quiz each time, from the notes and the graphical abstract. Its questions also go into the revision bank
+    (app/revision.py); each comes back with its bank `id`, so answers count towards revision."""
     paper = get_paper_or_404(paper_id)
     if not (abstract := db.get_abstract(paper_id, level)):
         raise HTTPException(409, "Make the graphical abstract first.")
     with claude_errors(f"quiz for paper {paper_id}"):
-        return quiz.make(paper, all_summaries(paper_id, paper, level), abstract, level)
+        made = quiz.make(paper, all_summaries(paper_id, paper, level), abstract, level)
+    ids = db.add_questions(paper_id, level, made.questions, revision.today().isoformat())
+    return {
+        "questions": [
+            {**q.model_dump(), "id": i, "paper_id": paper_id, "paper": paper.title, "level": level}
+            for q, i in zip(made.questions, ids)
+        ]
+    }
 
 
 class QuizResult(BaseModel):
@@ -211,6 +219,49 @@ def quiz_result(paper_id: int, result: QuizResult) -> None:
         "quiz",
         result.model_dump(),
         f'Quiz on "{paper.title}": {result.right_first_time}/{result.total} right first time. Missed:\n{missed}',
+    )
+
+
+@app.get("/revision")
+def get_revision() -> dict:
+    """The Revision page: XP today, streak, the week, and each paper's questions, due count and strength."""
+    return revision.overview()
+
+
+class SessionRequest(BaseModel):
+    paper_ids: list[int] | None = None  # None: every paper
+    n: int = revision.SESSION
+
+
+@app.post("/revision/session")
+def revision_session(req: SessionRequest) -> dict:
+    """A review: due questions first, mixed across papers."""
+    return {"questions": revision.session(req.paper_ids, max(1, min(req.n, 30)))}
+
+
+class AnswerRequest(BaseModel):
+    correct: bool
+    first_try: bool = True
+
+
+@app.post("/revision/questions/{question_id}/answer")
+def revision_answer(question_id: int, req: AnswerRequest) -> dict:
+    """Record an answer (from a review or a paper's quiz): moves the question between boxes and awards XP."""
+    try:
+        return revision.answer(question_id, req.correct, req.first_try)
+    except KeyError:
+        raise HTTPException(404, "No such question")
+
+
+@app.post("/revision/result", status_code=204)
+def revision_result(result: QuizResult) -> None:
+    """Remember how a review across papers went; `missed` items also carry their "paper"."""
+    missed = "\n".join(f"- [{m.get('paper')}] {m.get('prompt')} (answer: {m.get('answer')})" for m in result.missed) or "(none)"
+    memory.record(
+        None,
+        "revision",
+        result.model_dump(),
+        f"Revision across papers: {result.right_first_time}/{result.total} right first time. Missed:\n{missed}",
     )
 
 
