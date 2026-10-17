@@ -240,7 +240,10 @@ async function editNote(note) {
     if (!body.querySelector("li")) body.insertAdjacentHTML("beforeend", `<ul><li></li></ul>`);
     note.classList.add("editing");
     body.contentEditable = "true";
-    body.onkeydown = (e) => e.key === "Escape" && (stopEditing(note), fillNote(note, note.data));
+    body.onkeydown = (e) => {
+      // A block, not `e.key === "Escape" && …`: a handler property returning false cancels the key, so nothing types.
+      if (e.key === "Escape") stopEditing(note), fillNote(note, note.data);
+    };
     body.focus();
     Object.assign(button, { textContent: "✓", title: "Save note" });
     return;
