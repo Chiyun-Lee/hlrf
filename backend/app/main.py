@@ -12,8 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import db, extract, feed, llm, pitch, summarize
-from .schemas import PageSummary, Pitch
+from . import db, extract, feed, llm, pins, pitch, summarize
+from .schemas import PageSummary, PaperPins, Pitch
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
@@ -93,6 +93,15 @@ def get_summary(paper_id: int, page: int) -> PageSummary:
             raise HTTPException(500, f"{type(e).__name__}: {e}")
         db.save_summary(paper_id, page, summary)
         return summary
+
+
+@app.get("/papers/{paper_id}/pins")
+def get_pins(paper_id: int) -> PaperPins | None:
+    """Methods pins for the paper's figures and tables (app/pins.py); null when it has none."""
+    paper = db.get(paper_id)
+    if not paper:
+        raise HTTPException(404)
+    return pins.for_paper(paper)
 
 
 @app.delete("/papers/{paper_id}", status_code=204)

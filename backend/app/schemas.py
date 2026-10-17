@@ -1,6 +1,7 @@
 """Shared data contract between the extractor, the API and the paper browser."""
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
@@ -64,6 +65,34 @@ class Note(BaseModel):
 
 class PageSummary(BaseModel):
     notes: list[Note]
+
+
+class Pin(BaseModel):
+    """One methods pin on a figure or table (app/pins.py), in two levels: a plain line and a researcher's line."""
+
+    kind: Literal["data", "method", "concern"]  # where the numbers come from / what was done / what to worry about
+    title: str  # a few words, shown on the button
+    basic: str  # plain language, for anyone
+    researcher: str  # precise, with numbers, for researchers
+    evidence: Literal["From the paper", "Code re-run", "Tested"]  # how far the claim was checked
+
+
+class PinTarget(BaseModel):
+    """A figure or table that carries pins."""
+
+    label: str  # "Figure 1", "Table II"
+    page: int  # 0-indexed
+    caption: str  # how its caption starts ("Figure 1."); the pins only show if the page has it right below `bbox`
+    bbox: list[float]  # [x0, y0, x1, y1] in PDF points from the page's top-left, as in Block.bbox
+    pins: list[Pin]
+
+
+class PaperPins(BaseModel):
+    """All the pins for one paper: one JSON file per arXiv id in app/pins/."""
+
+    arxiv_id: str  # without the version
+    reviewed: str  # what the pins rest on, shown under each pin
+    targets: list[PinTarget]
 
 
 class Pitch(BaseModel):
