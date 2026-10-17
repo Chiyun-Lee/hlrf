@@ -15,6 +15,7 @@ from journal_club.minutes import (
     _agenda,
     _directions,
     _disputes,
+    _hypotheses,
     _rejected_counts,
     _report,
     _run_started,
@@ -22,7 +23,8 @@ from journal_club.minutes import (
     _window,
 )
 
-NIGHT_STEPS: tuple[Step, ...] = ("map", "debate", "directions", "synthesis")
+NIGHT_STEPS: tuple[Step, ...] = ("map", "debate", "directions", "hypotheses", "critique", "synthesis")
+EXPLORE_STEPS: tuple[Step, ...] = ("hypotheses", "critique")  # not in a backtest, nor in runs from before they existed
 BACKTEST_STEPS: tuple[Step, ...] = (*NIGHT_STEPS, "baseline", "judge")
 CARD_HEAD = ("id", "citekey", "title", "year", "date", "authors", "abstract")
 
@@ -49,6 +51,7 @@ class RunState(BaseModel):
     pairs: list[dict]  # every pair verdict of the last map window
     disputes: list[dict]
     directions: list[dict]  # ranked by confidence
+    hypotheses: list[dict]  # reviews ranked by the round-2 tournament, then hypotheses not reviewed yet (decision None)
     baseline_directions: list[dict]
     synthesis: dict | None
     report: dict | None
@@ -86,7 +89,7 @@ def _step_state(events: list[Event], step: Step) -> StepState:
     done = [e for e in last if e.type in ("step_done", "step_skipped")]
     if done:  # a resume appends a step_skipped after the original step_done: the last word says how the step ended
         return StepState(name=step, status="done", count=int(done[-1].payload.get("count", 0)), reused=done[-1].type == "step_skipped")
-    produced = sum(1 for e in last if e.type in ("pair_verdict", "dispute", "direction", "synthesis", "hit"))
+    produced = sum(1 for e in last if e.type in ("pair_verdict", "dispute", "direction", "hypothesis", "review", "synthesis", "hit"))
     return StepState(name=step, status="running", count=produced)
 
 
@@ -95,7 +98,8 @@ def fold(events: list[Event]) -> RunState:
     started = _run_started(events)
     is_backtest = started.get("T") is not None or any(e.step == "backtest" for e in events)
     split = next((e.payload for e in events if e.step == "backtest" and e.type == "split"), {})
-    steps = BACKTEST_STEPS if is_backtest else NIGHT_STEPS
+    explored = started.get("explore", False) or any(e.step in EXPLORE_STEPS for e in events)
+    steps = [s for s in (BACKTEST_STEPS if is_backtest else NIGHT_STEPS) if explored or s not in EXPLORE_STEPS]
     return RunState(
         kind="backtest" if is_backtest else "night",
         agenda=_agenda(events),
@@ -107,6 +111,7 @@ def fold(events: list[Event]) -> RunState:
         pairs=[e.payload for e in _window(events, "map") if e.type == "pair_verdict"],
         disputes=_disputes(events),
         directions=_directions(events),
+        hypotheses=_hypotheses(events),
         baseline_directions=_directions(events, "baseline") if is_backtest else [],
         synthesis=_synthesis(events),
         report=_report(events),

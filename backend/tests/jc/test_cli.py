@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from journal_club.archive import Archive
 from journal_club.cli import app
+from journal_club.night import STEPS
 from .conftest import FIXTURE_CARDS, make_pdf
 
 runner = CliRunner()
@@ -48,7 +49,7 @@ def test_run_twice_into_same_out_resumes_without_flag(tmp_path: Path) -> None:
     after = (out / "events.jsonl").read_bytes()
     assert after.startswith(before), "the archive is append-only: the first run's lines are untouched"
     types = _events(out)
-    assert types.count("step_skipped") == 4 and types.count("written") == 2
+    assert types.count("step_skipped") == len(STEPS) and types.count("written") == 2
     assert types.count("pair_verdict") == 28 and types.count("run_started") == 1
     assert (out / "minutes.md").read_text(encoding="utf-8") == minutes_before
 
@@ -60,7 +61,7 @@ def test_run_resume_skips_every_step(tmp_path: Path) -> None:
     res = runner.invoke(app, [*args, "--resume"])
     assert res.exit_code == 0, res.output
     types = _events(out)
-    assert types.count("step_skipped") == 4 and types.count("written") == 2
+    assert types.count("step_skipped") == len(STEPS) and types.count("written") == 2
 
 
 def test_backtest_writes_report(tmp_path: Path) -> None:

@@ -1,4 +1,5 @@
-"""One night of the club: map -> debate -> directions, resumable from the archive (DESIGN.md §8.1)."""
+"""One night of the club: map -> debate -> directions -> hypotheses -> critique (round 2) -> synthesis, resumable
+from the archive (DESIGN.md §8.1). A backtest runs it without the two exploration steps."""
 
 from __future__ import annotations
 
@@ -14,12 +15,21 @@ from journal_club.cards import PaperCard
 from journal_club.llm import LLM, MockLLM, resolve_model
 from journal_club.rounds.debate import Dispute, disputes_from_events, run_debate
 from journal_club.rounds.directions import Direction, directions_from_events, run_directions
+from journal_club.rounds.explore import (
+    N_HYPOTHESES,
+    Review,
+    critique_from_events,
+    hypotheses_from_events,
+    run_critique,
+    run_hypotheses,
+)
 from journal_club.rounds.map_round import MapResult, card_content_sha, card_ids_sha, run_map
 from journal_club.rounds.synthesis import Synthesis, run_synthesis, synthesis_from_events
 
 log = logging.getLogger(__name__)
 
-STEPS: tuple[Step, ...] = ("map", "debate", "directions", "synthesis")
+STEPS: tuple[Step, ...] = ("map", "debate", "directions", "hypotheses", "critique", "synthesis")
+EXPLORE_STEPS: tuple[Step, ...] = ("hypotheses", "critique")
 SKIP_REASON = "resumed from archive"
 T = TypeVar("T")
 
@@ -29,13 +39,14 @@ class ResumeMismatch(RuntimeError):
 
 
 class NightResult(BaseModel):
-    """What one night produced: the pair map, the disputes and the ranked directions."""
+    """What one night produced: the pair map, the disputes, the ranked directions and the reviewed hypotheses."""
 
     model_config = ConfigDict(extra="forbid")
 
     map: MapResult
     disputes: list[Dispute]
     directions: list[Direction]
+    hypotheses: list[Review] = []  # ranked by the round-2 tournament, dropped ones last; [] when not explored
     synthesis: Synthesis | None = None
 
 
@@ -82,7 +93,7 @@ def check_card_contents(started: dict, cards: list[PaperCard]) -> None:
 
 
 def check_run(
-    archive: Archive, cards: list[PaperCard], agenda: str, llm: LLM, judge_model: str, round: int
+    archive: Archive, cards: list[PaperCard], agenda: str, llm: LLM, judge_model: str, round: int, explore: bool = True
 ) -> str:
     """Bind the archive to this card set: append run_started, or check both shas and the agenda on resume."""
     sha = card_ids_sha(cards)
@@ -95,6 +106,7 @@ def check_run(
             "card_ids_sha": sha,
             "cards_sha": card_content_sha(cards),
             "T": None,
+            "explore": explore,
             "cards": [c.model_dump() for c in cards],
         }
         archive.append(_event("map", "run_started", payload, round))
@@ -153,9 +165,12 @@ def run_night(
     cap: int = 5,
     turns: int = 2,
     n: int = 8,
+    explore: bool = True,
+    n_hypotheses: int = N_HYPOTHESES,
 ) -> NightResult:
-    """Run map -> debate -> directions on the cards; steps already in the archive are not re-run."""
-    sha = check_run(archive, cards, agenda, llm, judge_model, round)
+    """Run the night's steps on the cards; steps already in the archive are not re-run. `explore=False` skips the
+    hypotheses and their critique round (a backtest scores directions only)."""
+    sha = check_run(archive, cards, agenda, llm, judge_model, round, explore)
     map_result = _resume_or_run(
         archive, "map", sha, round,
         lambda: MapResult.from_events(archive),
@@ -174,14 +189,30 @@ def run_night(
         lambda: run_directions(map_result, disputes, cards, llm, archive, n=n, agenda=agenda, round=round),
         len,
     )
+    reviews: list[Review] = []
+    if explore:
+        hypotheses = _resume_or_run(
+            archive, "hypotheses", sha, round,
+            lambda: hypotheses_from_events(archive),
+            lambda: run_hypotheses(
+                map_result, disputes, directions, cards, llm, archive, n=n_hypotheses, agenda=agenda, round=round
+            ),
+            len,
+        )
+        reviews = _resume_or_run(  # the second round: its events carry round + 1
+            archive, "critique", sha, round + 1,
+            lambda: critique_from_events(archive, hypotheses),
+            lambda: run_critique(hypotheses, cards, llm, archive, agenda=agenda, round=round + 1),
+            len,
+        )
     synthesis = _resume_or_run(
         archive, "synthesis", sha, round,
         lambda: synthesis_from_events(archive),
-        lambda: run_synthesis(map_result, disputes, directions, cards, llm, archive, agenda=agenda, round=round),
+        lambda: run_synthesis(map_result, disputes, directions, cards, llm, archive, agenda=agenda, round=round, hypotheses=reviews),
         lambda s: len(s.key_points) if s is not None else 0,
     )
     log.info(
-        "night: %d pairs, %d dispute(s), %d direction(s), %d key point(s)",
-        len(map_result.pairs), len(disputes), len(directions), len(synthesis.key_points) if synthesis else 0,
+        "night: %d pairs, %d dispute(s), %d direction(s), %d hypothesis(es), %d key point(s)",
+        len(map_result.pairs), len(disputes), len(directions), len(reviews), len(synthesis.key_points) if synthesis else 0,
     )
-    return NightResult(map=map_result, disputes=disputes, directions=directions, synthesis=synthesis)
+    return NightResult(map=map_result, disputes=disputes, directions=directions, hypotheses=reviews, synthesis=synthesis)

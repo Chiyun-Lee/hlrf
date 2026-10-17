@@ -1,7 +1,10 @@
 import pymupdf
 import pytest
+from fastapi.testclient import TestClient
 
-from app.cards import clean, crop_figures, stated
+from app import cards, db
+from app.cards import clean, crop_figures, notes_hash, stated
+from app.main import app
 from app.schemas import ChartItem, PageSummary, Paper, SummaryCards
 
 PAPER = Paper(
@@ -75,3 +78,30 @@ def test_figures_are_cropped_from_the_pdf():
     cards = deck(figures=[{"figure": "p0n0", "callout": "look"}])
     [figure] = crop_figures(cards, paper, notes, pdf)
     assert figure.image.startswith("data:image/png;base64,") and figure.width > 300 and figure.height > 250
+
+
+def test_cards_say_when_the_notes_have_changed(monkeypatch):
+    """A deck remembers the notes it was made from: editing a note (a tutor's edit, the reader's own) flags it, and
+    undoing the edit clears the flag."""
+    client = TestClient(app)
+    monkeypatch.setattr(cards.llm, "ask", lambda *a, **k: deck())
+    pid = db.save(PAPER)
+    for level in ("outreach", "researcher"):
+        db.save_summary(pid, 0, level, NOTES[0])
+    assert client.post(f"/papers/{pid}/cards").json()["notes_changed"] is False
+    assert client.get(f"/papers/{pid}/cards").json()["notes_changed"] is False
+
+    note = NOTES[0].notes[0].model_dump()
+    client.put(f"/papers/{pid}/pages/0/notes/0", json=note | {"bullets": ["x, said better"]})
+    assert client.get(f"/papers/{pid}/cards").json()["notes_changed"] is True
+    client.put(f"/papers/{pid}/pages/0/notes/0", json=note)  # undo
+    assert client.get(f"/papers/{pid}/cards").json()["notes_changed"] is False
+
+    client.put(f"/papers/{pid}/pages/0/notes/0?level=researcher", json=note | {"bullets": ["other level"]})
+    assert client.get(f"/papers/{pid}/cards").json()["notes_changed"] is False  # each level's deck has its own notes
+    assert client.post(f"/papers/{pid}/cards").json()["notes_changed"] is False  # a remake is up to date again
+
+
+def test_notes_hash_ignores_asides():
+    aside = PageSummary(notes=[*NOTES[0].notes, {"kind": "aside", "blocks": [0], "bullets": ["a margin note"]}])
+    assert notes_hash([aside]) == notes_hash(NOTES) != notes_hash([PageSummary(notes=NOTES[0].notes[:1])])

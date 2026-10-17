@@ -18,6 +18,7 @@ import re
 import shutil
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -34,6 +35,7 @@ from journal_club.archive import Event
 from journal_club.cards import PaperCard, ingest_text, load_cards, sanitise_id, save_card
 from journal_club.llm import default_backend
 from journal_club.night import run_night
+from journal_club.rounds.explore import CRITICS
 from journal_club.rounds.map_round import workers
 from journal_club.state import RunState, fold, read_events
 
@@ -50,11 +52,15 @@ MAX_PAPERS = 16  # a night maps every pair: 16 papers is 120 pairs
 # How long a night takes, for the estimate before Start and the time left while it runs. Seconds, measured on a
 # 9-paper night with the Claude Code login (claude-opus-5-5, JC_CONCURRENCY=4, 6.5 minutes in all): map calls finish
 # in batches of JC_CONCURRENCY, a debate is one call at a time (each side speaks `turns` times, then the PI rules),
-# directions and the overview (synthesis) are one long call each. The mock backend answers instantly.
-TIMING = {"map_batch": 11.0, "debate_call": 9.0, "directions": 50.0, "synthesis": 30.0}
+# directions and the overview (synthesis) are one long call each. The mock backend answers instantly. The exploration
+# steps are estimates, not yet measured: hypotheses is one long call; round 2 reviews JC_CONCURRENCY hypotheses at a
+# time (each: up to CRITICS critiques, then the PI's call, one after another), then plays its comparisons in batches.
+TIMING = {"map_batch": 11.0, "debate_call": 9.0, "directions": 50.0, "hypotheses": 50.0, "critique_call": 9.0,
+          "compare_batch": 8.0, "synthesis": 30.0}
 _NIGHT = inspect.signature(run_night).parameters
 DEBATE_CAP = _NIGHT["cap"].default  # disagreeing pairs debated per night
 CALLS_PER_DEBATE = 2 * _NIGHT["turns"].default + 1
+N_HYPOTHESES = _NIGHT["n_hypotheses"].default
 BACKENDS = {"agent": "your Claude Code login", "anthropic": "the Anthropic API key", "mock": "the offline mock"}
 
 
@@ -109,28 +115,32 @@ def timing() -> dict[str, float]:
     return dict.fromkeys(TIMING, 0.0) if os.environ.get("JC_LLM") == "mock" else TIMING
 
 
-def step_totals(n_cards: int, pairs: list[dict], map_done: bool) -> dict[str, int]:
+def step_totals(n_cards: int, pairs: list[dict], map_done: bool, n_hypotheses: int | None = None) -> dict[str, int]:
     """Items each night step will make. Debates are the first DEBATE_CAP disagreeing pairs: counted once the map is
     done, and assumed to be the cap until then (both measured nights reached it; projecting from the first few pairs
-    swung the estimate by minutes)."""
+    swung the estimate by minutes). Round 2 reviews every hypothesis kept, N_HYPOTHESES until they're known."""
     n_pairs = n_cards * (n_cards - 1) // 2
     disagree = sum(p.get("relation") == "disagree" for p in pairs) if map_done else DEBATE_CAP
-    return {"map": n_pairs, "debate": min(DEBATE_CAP, disagree, n_pairs), "directions": 1, "synthesis": 1}
+    return {"map": n_pairs, "debate": min(DEBATE_CAP, disagree, n_pairs), "directions": 1, "hypotheses": 1,
+            "critique": N_HYPOTHESES if n_hypotheses is None else n_hypotheses, "synthesis": 1}
 
 
-def step_seconds(step: str, todo: int, t: dict[str, float], concurrency: int) -> float:
-    """Wall time for `todo` more items of a step."""
+def step_seconds(step: str, todo: int, t: dict[str, float], concurrency: int, total: int = 0) -> float:
+    """Wall time for `todo` more items of a step (of `total`, for round 2's comparisons, which come after them all)."""
     if step == "map":
         return math.ceil(todo / concurrency) * t["map_batch"]
     if step == "debate":
         return todo * CALLS_PER_DEBATE * t["debate_call"]
+    if step == "critique":
+        matches = total * (total - 1) // 2
+        return math.ceil(todo / concurrency) * (CRITICS + 1) * t["critique_call"] + math.ceil(matches / concurrency) * t["compare_batch"]
     return todo * t.get(step, 0.0)  # backtest-only steps (baseline, judge) aren't estimated
 
 
 def estimate_night_s(n_cards: int) -> int:
     """About how long a fresh night on n_cards papers takes."""
     t, conc = timing(), workers()
-    return round(sum(step_seconds(s, n, t, conc) for s, n in step_totals(n_cards, [], False).items()))
+    return round(sum(step_seconds(s, n, t, conc, n) for s, n in step_totals(n_cards, [], False).items()))
 
 
 def progress(st: RunState, running: bool, started: float | None, last_write: float | None, now: float) -> Progress:
@@ -140,12 +150,14 @@ def progress(st: RunState, running: bool, started: float | None, last_write: flo
     if not running:
         return Progress(step=None, done=0, total=0, elapsed_s=elapsed, remaining_s=None)
     status = {s.name: s for s in st.steps}
-    totals = step_totals(len(st.cards), st.pairs, "map" in status and status["map"].status == "done")
+    proposed = len(st.hypotheses) if "hypotheses" in status and status["hypotheses"].status == "done" else None
+    totals = step_totals(len(st.cards), st.pairs, "map" in status and status["map"].status == "done", proposed)
     t, conc = timing(), workers()
     left = 0.0
     for s in st.steps:
         if s.status != "done":
-            left += step_seconds(s.name, max(0, totals.get(s.name, 0) - (s.count if s.status == "running" else 0)), t, conc)
+            todo = max(0, totals.get(s.name, 0) - (s.count if s.status == "running" else 0))
+            left += step_seconds(s.name, todo, t, conc, totals.get(s.name, 0))
     if left:
         left = max(left - (now - last_write if last_write else 0), 5.0)
     current = next((s for s in st.steps if s.status != "done"), None)
@@ -225,6 +237,7 @@ class Ingest:
 
     def __init__(self, name: str, papers: list[tuple[int, Paper]]):
         self.name, self.papers, self.done, self.failed = name, papers, 0, []
+        self.lock = threading.Lock()
         self.dir = CLUB_DIR / "cards" / name
         self.thread = threading.Thread(target=self.run, name=f"club-ingest-{name}", daemon=True)
 
@@ -243,12 +256,19 @@ class Ingest:
             self.failed = [f"{title}: {type(e).__name__}: {e}" for _, p in self.papers for title in [p.title]]
             self.done = len(self.papers)
             return
-        for pid, paper in self.papers:
-            try:
-                save_card(card_from_paper(pid, paper, model), self.dir)
-            except Exception as e:
-                log.exception("card set %s: paper %s failed", self.name, pid)
+        # One Claude call per paper, JC_CONCURRENCY of them at a time (as in the map round).
+        with ThreadPoolExecutor(max_workers=workers(), thread_name_prefix=f"club-ingest-{self.name}") as pool:
+            for _ in pool.map(lambda item: self.ingest_one(*item, model), self.papers):
+                pass
+
+    def ingest_one(self, pid: int, paper: Paper, model) -> None:
+        try:
+            save_card(card_from_paper(pid, paper, model), self.dir)
+        except Exception as e:
+            log.exception("card set %s: paper %s failed", self.name, pid)
+            with self.lock:
                 self.failed.append(f"{paper.title}: {type(e).__name__}: {e}")
+        with self.lock:
             self.done += 1
 
 

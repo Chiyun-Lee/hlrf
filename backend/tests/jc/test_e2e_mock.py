@@ -12,7 +12,7 @@ from journal_club.backtest import run_backtest
 from journal_club.cards import PaperCard
 from journal_club.llm import MockLLM, parse_headers, parse_quotes
 from journal_club.minutes import write_minutes
-from journal_club.night import NightResult, run_night
+from journal_club.night import STEPS, NightResult, run_night
 from journal_club.quotes import verify_quotes
 from journal_club.rounds.directions import Direction
 from .conftest import CountingLLM
@@ -126,7 +126,7 @@ def test_rerun_makes_zero_llm_calls(night: tuple[NightResult, MockLLM], cards: l
     assert len(mock.calls) == n_calls
     assert second == first
     types = [e.type for e in tmp_archive.read()]
-    assert types.count("step_skipped") == 4
+    assert types.count("step_skipped") == len(STEPS)
     assert types.count("run_started") == 1 and "agenda_changed" not in types
     for step in ("map", "debate", "directions"):
         assert _types(tmp_archive, step)[-1] == "step_skipped"

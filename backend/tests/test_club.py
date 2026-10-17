@@ -1,6 +1,7 @@
 """The journal club API (app/club.py) on the shipped examples and on the mock LLM backend (JC_LLM=mock)."""
 
 import shutil
+import threading
 from pathlib import Path
 
 import pytest
@@ -78,7 +79,7 @@ def test_night_with_mock(club_dir: Path) -> None:
     assert view["summary"]["state"] == "done", view["summary"]
     st = view["state"]
     assert st["kind"] == "night" and st["agenda"] == "batch correction" and st["model"] == "mock"
-    assert [s["status"] for s in st["steps"]] == ["done"] * 4 and not any(s["reused"] for s in st["steps"])
+    assert [s["status"] for s in st["steps"]] == ["done"] * 6 and not any(s["reused"] for s in st["steps"])
     assert len(st["pairs"]) == 28 and st["directions"] and st["synthesis"]
     assert client.get("/club/runs/n1/minutes").status_code == 200
     prog = view["summary"]["progress"]
@@ -128,6 +129,27 @@ def test_card_set_from_library() -> None:
     assert client.post("/club/cards", json={"name": "m3", "paper_ids": []}).status_code == 422
 
 
+def test_card_set_ingests_papers_in_parallel(monkeypatch: pytest.MonkeyPatch) -> None:
+    """JC_CONCURRENCY=2: two papers are read at once (each waits for the other), and one failure doesn't stop the rest."""
+    pids = [db.save(Paper(url=f"u{i}", title=f"P{i}", authors=[], year=2021, pages=[{"blocks": [{"text": t} for t in LINES]}])) for i in range(3)]
+    both_in = threading.Barrier(2, timeout=10)
+    real = club.card_from_paper
+
+    def card(pid, paper, model):
+        if paper.title == "P2":
+            raise ValueError("no claim survived")
+        both_in.wait()  # raises BrokenBarrierError if the other paper isn't being read at the same time
+        return real(pid, paper, model)
+
+    monkeypatch.setattr(club, "card_from_paper", card)
+    assert client.post("/club/cards", json={"name": "par", "paper_ids": pids}).status_code == 202
+    club.INGESTS["par"].thread.join(30)
+    progress = {s["name"]: s for s in client.get("/club/cards").json()}["par"]["ingesting"]
+    assert progress["done"] == 3 and progress["running"] is False
+    assert [f.split(":")[0] for f in progress["failed"]] == ["P2"]
+    assert len(list((club.CLUB_DIR / "cards" / "par").glob("*.json"))) == 2
+
+
 def test_config() -> None:
     cfg = client.get("/club/config").json()
     assert cfg == {"ready": None, "backend": "the offline mock", "debate_cap": club.DEBATE_CAP, "concurrency": 2}
@@ -136,12 +158,14 @@ def test_config() -> None:
 def test_estimates(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("JC_LLM")
     monkeypatch.setenv("JC_CONCURRENCY", "4")
-    assert club.step_totals(9, [], False) == {"map": 36, "debate": club.DEBATE_CAP, "directions": 1, "synthesis": 1}
+    assert club.step_totals(9, [], False) == {"map": 36, "debate": club.DEBATE_CAP, "directions": 1, "hypotheses": 1,
+                                              "critique": club.N_HYPOTHESES, "synthesis": 1}
+    assert club.step_totals(9, [], True, n_hypotheses=4)["critique"] == 4  # round 2 reviews the hypotheses kept
     some = [{"relation": "disagree"}] * 2 + [{"relation": "agree"}] * 16
     assert club.step_totals(9, some, False)["debate"] == club.DEBATE_CAP  # the cap until the map is done
     assert club.step_totals(9, some, True)["debate"] == 2
     assert club.step_totals(2, [], False)["debate"] == 1  # one pair, at most one debate
-    assert 5 * 60 <= club.estimate_night_s(9) <= 8 * 60  # the measured 9-paper night took 6.5 minutes
+    assert 5 * 60 <= club.estimate_night_s(9) <= 11 * 60  # the measured 9-paper night took 6.5 minutes before exploring
     assert club.estimate_night_s(2) < club.estimate_night_s(9) < club.estimate_night_s(16)
     sets = {s["name"]: s for s in client.get("/club/cards").json()}
     assert sets["desi"]["night_s"] == club.estimate_night_s(9)

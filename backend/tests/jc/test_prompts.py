@@ -22,6 +22,10 @@ HEADERS = {
     "baseline": ["AGENDA", "N"],
     "judge": ["DIRECTION", "FROM", "TO", "BECAUSE", "AFTER_IDS"],
     "synthesis": ["AGENDA"],
+    "hypotheses": ["AGENDA", "N"],
+    "critique": ["AGENDA", "SPEAKER", "HYPOTHESIS", "MECHANISM", "TEST", "PREDICTION", "SOURCE"],
+    "revise": ["AGENDA", "HYPOTHESIS", "MECHANISM", "TEST", "PREDICTION", "SOURCE"],
+    "compare": ["AGENDA"],
 }
 
 
@@ -82,8 +86,9 @@ def test_quote_kinds_demand_quote_lines_and_state_min_len(kind: str) -> None:
 
 @pytest.mark.parametrize("kind", NO_QUOTE_KINDS)
 def test_non_quote_kinds_never_mention_quote_lines(kind: str) -> None:
-    """ingest, judge and debate_verdict see no QUOTE[...] lines, so their rules must not demand them."""
-    assert kind in ("ingest", "judge", "debate_verdict")
+    """These kinds emit no quotes (debate_verdict, revise and compare may read some), so their rules must not demand
+    them."""
+    assert kind in ("ingest", "judge", "debate_verdict", "revise", "compare")
     text = prompts.load_prompt(kind)
     assert "QUOTE[" not in text
     assert "no prose" in text

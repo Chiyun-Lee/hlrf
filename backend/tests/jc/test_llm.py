@@ -12,6 +12,7 @@ import pytest
 
 from journal_club import prompts
 from journal_club.cards import PaperCard, Quote, render_card_for_prompt
+from journal_club.rounds.explore import Critique, Hypothesis, Review
 from journal_club.llm import (
     QUOTE_RE,
     AnthropicLLM,
@@ -63,7 +64,27 @@ def all_user_prompts(cards: list[PaperCard]) -> dict[str, str]:
         "synthesis": prompts.build_synthesis(
             "agenda", before, [_agree(cards[1], cards[2])], [_shared(cards[4], cards[5])], [_dispute(a, b)], []
         ),
+        "hypotheses": prompts.build_hypotheses(
+            "agenda", 6, before, [_agree(cards[1], cards[2])], [_shared(cards[4], cards[5])], [_dispute(a, b)], [_direction()]
+        ),
+        "critique": prompts.build_critique("agenda", _hypothesis(a, b), a, [b]),
+        "revise": prompts.build_revise("agenda", _hypothesis(a, b), [_critique(a)]),
+        "compare": prompts.build_compare("agenda", _review(a, b), _review(b, a)),
     }
+
+
+def _hypothesis(a: PaperCard, b: PaperCard) -> Hypothesis:
+    """A hypothesis resting on the first quote of each paper."""
+    return Hypothesis(id="h1", text="a and b predict x", mechanism="m", test="t", prediction="p", source="combine",
+                      papers=[a.id, b.id], quotes=[a.quotes()[0], b.quotes()[0]])
+
+
+def _critique(a: PaperCard) -> Critique:
+    return Critique(speaker=a.id, stance="objects", text="not in my data", quotes=[a.quotes()[0]], verified=True)
+
+
+def _review(a: PaperCard, b: PaperCard) -> Review:
+    return Review(hypothesis=_hypothesis(a, b), critiques=[_critique(a)], decision="keep", reason="r", wins=1, played=1)
 
 
 def _agree(a: PaperCard, b: PaperCard) -> SimpleNamespace:
@@ -120,7 +141,7 @@ def test_mock_every_kind_passes_schema_and_verifies(cards: list[PaperCard], kind
     user = all_user_prompts(cards)[kind]
     out = MockLLM().complete_json(kind, prompts.load_prompt(kind), user, prompts.SCHEMAS[kind])
     assert check_schema(out, prompts.SCHEMAS[kind]) == []
-    if kind in ("ingest", "debate_verdict", "judge"):
+    if kind in ("ingest", "debate_verdict", "judge", "revise", "compare"):
         return  # no quotes in these outputs by schema
     by_id = {c.id: c for c in cards}
     quotes = _quotes_in(out)

@@ -390,7 +390,9 @@ class Run:
             found = PaperPins.model_validate_json(path.read_text(encoding="utf-8"))
         except ValidationError as e:
             return None, [f"pins.json doesn't fit the PaperPins schema: {e}"]
-        return found, pins.problems(found, self.paper, self.found)
+        missing = ["no `claims`: give the paper's main claims as the re-run and the tests left them (the paper-pins "
+                   "skill, Reproduction card)"] if self.depth == "full" and not found.claims else []
+        return found, missing + pins.problems(found, self.paper, self.found)
 
 
 def pages_text(paper: Paper) -> str:
@@ -543,7 +545,9 @@ establish); ## Main problems (numbered, most important first, each with its evid
 each point).
 
 pins.json: write it with the paper-pins skill, giving every target in targets.json its pins. Set `reviewed` to what
-the pins rest on (what was done, then the date) and `verdict` to the review's bottom line in 1-2 sentences. The
+the pins rest on (what was done, then the date) and `verdict` to the review's bottom line in 1-2 sentences. Give
+`main_problems` from ## Main problems, and in a full review `claims`: the paper's main claims, each with the paper's
+number, the re-run's or the test's, and whether it holds. They fill the paper's Reproduction summary card. The
 skill's `python -m app.pins` commands are for interactive use: here targets.json lists the targets, and the
 `check_pins` tool checks pins.json. Fix pins.json until check_pins returns ok, then end with the verdict.
 """
@@ -834,6 +838,10 @@ What holds, what doesn't, and what would settle it.
 """
 
 
+DEMO_CLAIM = {"claim": "Demo claim: a real review lists the paper's main claims here.", "paper": "As printed",
+              "rerun": "The re-run's number", "status": "holds", "check": "Written by REVIEW_DEMO=1, without calling Claude."}
+
+
 def demo_pins(run: Run) -> dict:
     """Pins for every target: the shipped ones for its label when the paper has some (arXiv:2506.22373), with a
     placeholder data pin first wherever they lack one."""
@@ -848,10 +856,13 @@ def demo_pins(run: Run) -> dict:
         given = by_label.get(target.label, [])
         ordered = ([p for p in given if p.kind == "data"][:1] or [placeholder]) + [p for p in given if p.kind != "data"]
         targets.append({**target.model_dump(), "pins": [p.model_dump() for p in ordered]})
+    claims = [c.model_dump() for c in shipped.claims] if shipped else [DEMO_CLAIM]
     return {
         "arxiv_id": arxiv,
         "reviewed": shipped.reviewed if shipped else "Demo review (REVIEW_DEMO=1): nothing was checked",
         "verdict": "Demo verdict: a real review ends with its bottom line here.",
+        "claims": claims if run.depth == "full" else [],
+        "main_problems": shipped.main_problems if shipped else ["Demo problem: a real review lists its main problems here."],
         "targets": targets,
     }
 

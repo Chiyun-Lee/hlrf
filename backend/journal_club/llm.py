@@ -428,6 +428,43 @@ class MockLLM:
         pid = rng.choice(after_ids) if verdict != "miss" and after_ids else None
         return {"verdict": verdict, "after_paper_id": pid, "reason": f"mock judge: {verdict}"}
 
+    def _kind_hypotheses(self, rng: random.Random, h: dict[str, str], q: list, user: str) -> dict:
+        """Up to N hypotheses, each on two papers' first quotes, sources in turn."""
+        ids = list(dict.fromkeys(x["paper_id"] for x in q))
+        out = []
+        for i in range(min(int(h.get("N", "0") or 0), len(ids))):
+            pair = sorted(rng.sample(ids, 2)) if len(ids) >= 2 else [ids[0]]
+            out.append(
+                {
+                    "text": f"Mock hypothesis {i + 1}: {' and '.join(pair)} together predict an untested effect",
+                    "mechanism": f"mock mechanism {i + 1}",
+                    "test": f"mock test {i + 1}",
+                    "prediction": f"mock prediction {i + 1}",
+                    "source": ("combine", "resolve", "gap", "extend")[i % 4],
+                    "papers": pair,
+                    "quotes": [self._first_quote(q, p) for p in pair],
+                }
+            )
+        return {"hypotheses": out}
+
+    def _kind_critique(self, rng: random.Random, h: dict[str, str], q: list, user: str) -> dict:
+        """The speaker supports or objects with its own first quote."""
+        s = h.get("SPEAKER", "")
+        mine = self._quotes_for(q, s)
+        stance = rng.choice(["supports", "objects"])
+        return {"stance": stance, "text": f"{s} {stance}", "quotes": [dict(mine[0])] if mine else []}
+
+    def _kind_revise(self, rng: random.Random, h: dict[str, str], q: list, user: str) -> dict:
+        """Keep, revise (prefixing the text) or drop, the fields read back from the headers."""
+        decision = rng.choices(["keep", "revise", "drop"], weights=[2, 2, 1])[0]
+        fields = {k.lower(): h.get(k, "") for k in ("HYPOTHESIS", "MECHANISM", "TEST", "PREDICTION")}
+        text = fields.pop("hypothesis")
+        return {"decision": decision, "text": f"Revised: {text}" if decision == "revise" else text, **fields, "reason": f"mock {decision}"}
+
+    def _kind_compare(self, rng: random.Random, h: dict[str, str], q: list, user: str) -> dict:
+        """Random winner."""
+        return {"winner": rng.choice(["A", "B"]), "reason": "mock comparison"}
+
     # -- generic fallback -----------------------------------------------------
 
     def _kind_synthesis(self, rng: random.Random, h: dict[str, str], q: list, user: str) -> dict:

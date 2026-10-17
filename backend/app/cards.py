@@ -1,7 +1,9 @@
 """Summary cards for the whole paper: a TL;DR with headline numbers, a logic flow, a mind map, key findings, an
 evidence map, caveats, simple charts redrawn from numbers the paper states and the key figures cropped from the PDF.
-web/cards.js draws them under the graphical abstract."""
+web/cards.js draws them under the graphical abstract. A deck keeps a hash of the notes it was made from, so the
+reader can be told when their notes (a tutor's edit, their own) have changed since."""
 
+import hashlib
 import logging
 import math
 import os
@@ -43,6 +45,18 @@ end; short lines (they sit in cards).
 
 
 def make(paper: Paper, summaries: list[PageSummary], pdf: bytes | None, level: str) -> SummaryCards:
+    prompt = (
+        f"Paper: {paper.title}\n\nNotes, in reading order:\n\n{notes_text(summaries)}"
+        + f"\n\nFull text:\n\n{paper_text(paper)[:MAX_TEXT]}"
+    )
+    cards = clean(llm.ask(SummaryCards, f"{SYSTEM}\n\n{levels.for_prompt(level)}", prompt, MODEL, EFFORT), paper, summaries)
+    cards.figures = crop_figures(cards, paper, summaries, pdf)
+    cards.notes_hash, cards.notes_changed = notes_hash(summaries), False
+    return cards
+
+
+def notes_text(summaries: list[PageSummary]) -> str:
+    """The notes the cards are made from: every section and figure note (not asides), in reading order."""
     notes = []
     for p, summary in enumerate(summaries):
         for k, n in enumerate(summary.notes):
@@ -50,13 +64,11 @@ def make(paper: Paper, summaries: list[PageSummary], pdf: bytes | None, level: s
                 continue
             label = f"[figure p{p}n{k}]" if n.kind == "figure" else "[section]"
             notes.append(f"{label} {n.heading or ''}\n" + "\n".join(f"- {b}" for b in n.bullets))
-    prompt = (
-        f"Paper: {paper.title}\n\nNotes, in reading order:\n\n" + "\n\n".join(notes)
-        + f"\n\nFull text:\n\n{paper_text(paper)[:MAX_TEXT]}"
-    )
-    cards = clean(llm.ask(SummaryCards, f"{SYSTEM}\n\n{levels.for_prompt(level)}", prompt, MODEL, EFFORT), paper, summaries)
-    cards.figures = crop_figures(cards, paper, summaries, pdf)
-    return cards
+    return "\n\n".join(notes)
+
+
+def notes_hash(summaries: list[PageSummary]) -> str:
+    return hashlib.sha256(notes_text(summaries).encode()).hexdigest()[:16]
 
 
 def paper_text(paper: Paper) -> str:

@@ -73,7 +73,7 @@ def ingest(
     pdf_dir: Annotated[Path, typer.Argument(help="Directory of PDFs.", show_default=False)],
     cards_dir: CardsDir,
 ) -> None:
-    """Turn every PDF in PDF_DIR into a PaperCard JSON in CARDS_DIR."""
+    """Turn every PDF in PDF_DIR into a PaperCard JSON in CARDS_DIR (the app's default is a card set made from the library)."""
     from pydantic import ValidationError
     import pymupdf
 
@@ -98,21 +98,6 @@ def ingest(
         if failed:
             typer.echo(f"failed: {', '.join(failed)}", err=True)
             raise typer.Exit(EXIT_ERROR)
-
-    _guarded(go)
-
-
-@app.command(name="cards-from-summaries")
-def cards_from_summaries(
-    summary_dir: Annotated[Path, typer.Argument(help="Directory of executive-summary *.md files.", show_default=False)],
-    cards_dir: CardsDir,
-) -> None:
-    """Parse templated summaries into PaperCard JSON files; no LLM call."""
-    from journal_club.summaries import write_cards_from_summaries
-
-    def go() -> None:
-        paths = write_cards_from_summaries(summary_dir, cards_dir)
-        typer.echo(f"{len(paths)} cards -> {cards_dir}")
 
     _guarded(go)
 

@@ -13,7 +13,9 @@ from pydantic import BaseModel, ConfigDict
 
 log = logging.getLogger(__name__)
 
-Step = Literal["map", "debate", "directions", "synthesis", "backtest", "baseline", "judge", "minutes"]
+Step = Literal[
+    "map", "debate", "directions", "hypotheses", "critique", "synthesis", "backtest", "baseline", "judge", "minutes"
+]
 
 
 class Event(BaseModel):

@@ -56,6 +56,22 @@ the official file is "Tested"; the same pin without the comparison is "From the 
 - `verdict`: the review's bottom line, in 1-2 sentences.
 - `arxiv_id`: the arXiv id without its version, or leave it out for a paper not on arXiv.
 
+## Claims and main problems: the Reproduction card
+
+The paper's summary cards end with a Reproduction card drawn from `pins.json`: the verdict, a table of the paper's
+main claims against the re-run, and the main problems. It updates whenever a review stores new pins.
+
+- `claims` (when code was re-run or claims were tested; at most 8, most important first): each has
+  - `claim`: the paper's claim in one line (at most 20 words);
+  - `paper`: its number or result as the paper gives it ("5.4σ", "j₀ = 2.04"; at most 12 words);
+  - `rerun`: what the re-run or the test gave, in the same terms (at most 12 words), or null when nothing was run;
+  - `status`: `"holds"` (reproduced, and the tests back it), `"partly"` (reproduced but weaker, or holds only in
+    part), `"fails"` (not reproduced, or the tests break it) or `"untested"` (nothing run; `rerun` null);
+  - `check`: how it was checked and what was found (at most 35 words).
+- `main_problems`: the review's main problems, most important first (at most 5, each at most 45 words).
+
+The same evidence rule holds: a claim is only "holds", "partly" or "fails" when something was run.
+
 ## Output
 
 Write `pins.json` where the caller says (in a review job: the work dir):
@@ -65,6 +81,10 @@ Write `pins.json` where the caller says (in a review job: the work dir):
   "arxiv_id": "2506.22373",
   "reviewed": "Agent review of arXiv:2506.22373v2: ..., 17 Oct 2026",
   "verdict": "...",
+  "claims": [
+    {"claim": "...", "paper": "5.4σ", "rerun": "5.42σ; 3.9σ by profile likelihood", "status": "partly", "check": "..."}
+  ],
+  "main_problems": ["..."],
   "targets": [
     {"label": "Table I", "page": 2, "caption": "Table I.", "bbox": [382, 479, 497, 653], "pins": [
       {"kind": "data", "title": "DESI distances", "basic": "...", "researcher": "...", "evidence": "Tested"}
@@ -76,7 +96,7 @@ Write `pins.json` where the caller says (in a review job: the work dir):
 Then check it, and fix what it reports until it says `ok`: `uv run python -m app.pins check PAPER pins.json` (or the
 job's check tool, if the job gives you one). The check reports every broken rule with what to fix: a box with no
 caption right against it (it would not show), a missing or misplaced data pin, too many pins, lines over their word
-limits, a figure listed twice.
+limits, a figure listed twice, a claim marked tested with nothing run.
 
 For interactive use, `uv run python -m app.pins save PAPER_ID pins.json` checks and stores the pins for that library
 paper; the reader then shows them instead of any shipped ones.

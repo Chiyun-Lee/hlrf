@@ -383,7 +383,7 @@ def _club(before: list[PaperCard], llm: LLM, archive: Archive, agenda: str, judg
     """Default club arm: the full night (map -> debate -> directions) on the before-T cards."""
     from journal_club.night import run_night
 
-    return run_night(before, llm, archive, agenda, round=round, judge_model=judge_model).directions
+    return run_night(before, llm, archive, agenda, round=round, judge_model=judge_model, explore=False).directions
 
 
 def run_backtest(

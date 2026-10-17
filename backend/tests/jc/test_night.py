@@ -43,7 +43,7 @@ def test_second_run_zero_calls_three_skipped(cards: list[PaperCard], tmp_archive
     again = run_night(cards, llm, tmp_archive, AGENDA)
     assert llm.total == 0 and again == first
     skipped = [e for e in tmp_archive.read() if e.type == "step_skipped"]
-    assert [e.step for e in skipped] == ["map", "debate", "directions", "synthesis"]
+    assert [e.step for e in skipped] == ["map", "debate", "directions", "hypotheses", "critique", "synthesis"]
     assert skipped[0].payload == {"reason": "resumed from archive", "count": 28, "label": None}
     assert skipped[1].payload["count"] == len(first.disputes)
     assert skipped[2].payload["count"] == len(first.directions)

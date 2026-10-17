@@ -8,10 +8,11 @@ from pathlib import Path
 
 from journal_club.archive import Archive, Event, Step
 from journal_club.cards import PaperCard, Quote
+from journal_club.rounds.explore import hypotheses_from, ranked, reviews_from
 
 log = logging.getLogger(__name__)
 
-REJECTED_TYPES = ("quote_rejected", "turn_unverified", "direction_rejected")
+REJECTED_TYPES = ("quote_rejected", "turn_unverified", "direction_rejected", "hypothesis_rejected", "critique_unverified")
 
 
 # ------------------------------------------------------------------ events
@@ -42,6 +43,20 @@ def _disputes(events: list[Event]) -> list[dict]:
         if e.type == "dispute":
             by_pair[(e.payload["a"], e.payload["b"])] = e.payload
     return list(by_pair.values())
+
+
+def _hypotheses(events: list[Event]) -> list[dict]:
+    """Review payloads, ranked by the round-2 tournament (dropped last), then any hypotheses not reviewed yet, with
+    `decision` None."""
+    proposed = hypotheses_from([e for e in events if e.step == "hypotheses"])
+    done = reviews_from([e for e in events if e.step == "critique"])
+    reviewed = [r.model_dump() for r in ranked([done[h.id] for h in proposed if h.id in done])]
+    waiting = [
+        {"hypothesis": h.model_dump(), "original": None, "critiques": [], "decision": None, "reason": "", "wins": 0, "played": 0}
+        for h in proposed
+        if h.id not in done
+    ]
+    return reviewed + waiting
 
 
 def _run_started(events: list[Event]) -> dict:
@@ -108,6 +123,30 @@ def _direction_block(i: int, d: dict, by_id: dict[str, PaperCard]) -> list[str]:
         f"   from {d.get('from_a', '')} to {d.get('to_b', '')}, because {d.get('because', '')}; papers: {papers}",
     ]
     lines.extend(f"   {_quote_line(by_id, q)}" for q in d.get("quotes", []))
+    return lines
+
+
+DECISIONS = {"keep": "kept", "revise": "revised", "drop": "dropped", None: "not reviewed yet"}
+
+
+def _hypothesis_block(i: int, r: dict, by_id: dict[str, PaperCard]) -> list[str]:
+    """Markdown lines for one hypothesis: the idea, its test, its premises and what round 2 made of it."""
+    h = r["hypothesis"]
+    tally = f", won {r['wins']} of {r['played']}" if r.get("played") else ""
+    lines = [
+        f"{i}. **{h['text']}** ({DECISIONS.get(r.get('decision'), r.get('decision'))}{tally}; {h['source']})",
+        f"   mechanism: {h['mechanism']}",
+        f"   test: {h['test']}",
+        f"   prediction: {h['prediction']}",
+    ]
+    if r.get("original"):
+        lines.append(f"   revised from: {r['original']}")
+    lines.extend(f"   {_quote_line(by_id, q)}" for q in h.get("quotes", []))
+    for c in r.get("critiques", []):
+        flag = "" if c.get("verified") else ", unverified"
+        lines.append(f"   - {_citekey(by_id, c['speaker'])} {c['stance']}{flag}: {' '.join(str(c['text']).split())}")
+    if r.get("reason"):
+        lines.append(f"   - PI: {r['reason']}")
     return lines
 
 
@@ -199,6 +238,14 @@ def render_minutes(events: list[Event], cards: list[PaperCard]) -> str:
             lines.append("")
     else:
         lines.extend(["(none)", ""])
+    hypotheses = _hypotheses(events)
+    if hypotheses or any(e.step == "hypotheses" for e in events):
+        lines.extend(["## Hypotheses", ""])
+        for i, r in enumerate(hypotheses, start=1):
+            lines.extend(_hypothesis_block(i, r, by_id))
+            lines.append("")
+        if not hypotheses:
+            lines.extend(["(none)", ""])
     lines.extend(["## Disputes", ""])
     if disputes:
         for d in disputes:

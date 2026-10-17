@@ -17,6 +17,7 @@ from journal_club.quotes import verify_quotes
 if TYPE_CHECKING:
     from journal_club.rounds.debate import Dispute
     from journal_club.rounds.directions import Direction
+    from journal_club.rounds.explore import Review
     from journal_club.rounds.map_round import MapResult
 
 log = logging.getLogger(__name__)
@@ -91,6 +92,7 @@ def run_synthesis(
     agenda: str = "",
     round: int = 1,
     step: Step = "synthesis",
+    hypotheses: list[Review] | None = None,
 ) -> Synthesis:
     """One LLM call; every key point passes the quote gate or is rejected and logged."""
     by_id = {c.id: c for c in cards}
@@ -102,6 +104,7 @@ def run_synthesis(
         list(map_result.by_relation("shared_limitation")),
         disputes,
         directions,
+        hypotheses or [],
     )
     raw = llm.complete_json("synthesis", prompts.load_prompt("synthesis"), user, prompts.SCHEMAS["synthesis"])
     kept: list[KeyPoint] = []

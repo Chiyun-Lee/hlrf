@@ -1,15 +1,19 @@
 // Journal club (#/club, backend/app/club.py, backend/journal_club/): the papers of a card set become PhD-student agents
 // that, in one night, map every pair (agree / disagree / shared limitation), debate the clashes under a PI and write
-// ranked research directions, each backed by verbatim quotes from the papers. Backtests run from the command line
+// ranked research directions, each backed by verbatim quotes from the papers. The PI then proposes hypotheses that go
+// beyond the papers, and a second round tests them: each paper's student objects or supports, the PI keeps, revises
+// or drops each one, and the survivors are ranked by a round-robin. Backtests run from the command line
 // (`uv run jc backtest`) and aren't shown here.
 //   #/club                     the nights so far, a form to start one, the card sets
-//   #/club/runs/:name          one night: overview, pair map, directions, disputes, papers; live progress while it runs
+//   #/club/runs/:name          one night: overview, pair map, directions, hypotheses, disputes, papers; live progress
 //   #/club/runs/:name/minutes  the night's minutes, rendered
 // Everything drawn here is a projection of the run's events.jsonl, folded by journal_club/state.py (GET /club/runs/:name).
 
 const RELATIONS = { agree: "Agree", disagree: "Disagree", shared_limitation: "Shared limitation", unrelated: "Unrelated" };
-const STEPS = { map: "Map pairs", debate: "Debate", directions: "Directions", synthesis: "Overview" };
-const COUNTED = new Set(["map", "debate", "directions"]); // steps whose count means something to a reader
+const STEPS = { map: "Map pairs", debate: "Debate", directions: "Directions", hypotheses: "Hypotheses", critique: "Round 2", synthesis: "Overview" };
+const COUNTED = new Set(["map", "debate", "directions", "hypotheses", "critique"]); // steps whose count means something to a reader
+const DECISIONS = { keep: "kept", revise: "revised", drop: "dropped" }; // the PI's call on a hypothesis after round 2
+const SOURCES = { combine: "joins agreeing papers", resolve: "settles a dispute", gap: "behind a shared limitation", extend: "pushes a result further" };
 const POINT_KINDS = { consensus: "Agreed", dissent: "Disputed", gap: "Open", direction: "Next" };
 const VERDICTS = { stands: "claim stands", contested: "contested", unresolved: "unresolved" };
 const AGENDAS = [
@@ -54,8 +58,10 @@ async function clubPage() {
   app.innerHTML = `
     <h1 class="hand">Journal club</h1>
     <p class="muted">Each paper in a card set becomes a PhD-student agent. In one night they compare every pair of papers
-      (agree, disagree, shared limitation), debate the clashes under a PI and write ranked research directions, each
-      backed by quotes checked word for word against the papers.</p>
+      (agree, disagree, shared limitation), debate the clashes under a PI and write ranked research directions. Then the PI
+      proposes hypotheses that go beyond the papers, and a second round tests them: the papers they rest on object or
+      support, the PI revises or drops them, and the survivors are ranked head to head. Every premise is a quote checked
+      word for word against its paper.</p>
     <h2 class="hand">Nights</h2>
     <div id="club-runs"></div>
     <section class="club-new">
@@ -196,6 +202,7 @@ async function clubRun(name) {
     ["overview", "Overview", overviewSection(state.synthesis, byId)],
     ["pairs", "Pair map", pairMap(state.pairs, state.cards, key)],
     ["directions", "Directions", directionsSection(state.directions, byId)],
+    ["hypotheses", "Hypotheses", hypothesesSection(state.hypotheses, byId, key)],
     ["disputes", "Disputes", disputesSection(state.disputes, key)],
     ["papers", "Papers", papersSection(state.cards)],
   ].filter(([, , html]) => html);
@@ -346,6 +353,40 @@ function directionsSection(ds, byId) {
       .join("")}</ol>`;
 }
 
+// Ranked by round 2's round-robin, dropped ones last. Each shows its test and prediction; what its papers said and why
+// the PI kept, revised or dropped it fold away under it.
+function hypothesesSection(hs, byId, key) {
+  if (!hs?.length) return "";
+  const alive = hs.filter((r) => r.decision && r.decision !== "drop").length;
+  return `<h2 class="hand">Hypotheses</h2><p class="muted small">The club's own ideas, beyond what any one paper says: each rests on quoted premises
+    and names the test that would refute it. ${alive > 1 ? `Ranked by ${(alive * (alive - 1)) / 2} head-to-head comparisons by the PI.` : ""}</p>
+    <ol class="club-hypotheses">${hs
+      .map((r, i) => {
+        const h = r.hypothesis;
+        const call = r.decision ? `<span class="club-decision ${r.decision}">${DECISIONS[r.decision]}</span>` : `<span class="club-tag">in round 2</span>`;
+        const record = r.played ? `<span class="club-conf" title="comparisons won in round 2">won ${r.wins} of ${r.played}</span>` : "";
+        const said = (r.critiques ?? [])
+          .map((c) => `<li class="${c.verified ? "" : "unverified"}"><b>${esc(key(c.speaker))}</b> <span class="club-stance ${c.stance}">${c.stance}</span> ${esc(c.text)}${c.verified ? "" : ` <span class="club-tag warn">quote not verified</span>`}</li>`)
+          .join("");
+        return `<li class="${r.decision === "drop" ? "dropped" : ""}" data-papers="${esc((h.papers ?? []).join(" "))}">
+          <div class="club-dir-text">${esc(h.text)}${record}</div>
+          <div class="club-hyp-meta">${call}<span class="club-tag">${esc(SOURCES[h.source] ?? h.source)}</span></div>
+          <dl class="club-hyp">
+            <dt>Why</dt><dd>${esc(h.mechanism)}</dd>
+            <dt>Test</dt><dd>${esc(h.test)}</dd>
+            <dt>Expect</dt><dd>${esc(h.prediction)}</dd>
+          </dl>
+          <div class="club-chips">${(h.papers ?? []).map((p) => chip(p, byId)).join("")}</div>
+          ${quotes(h.quotes, byId, `hypothesis-${h.id}`)}
+          ${said || r.reason ? `<details class="club-quotes" data-key="round2-${esc(h.id)}"><summary class="small">Round 2: what the papers said</summary>
+            ${r.original ? `<p class="small"><b>Proposed as:</b> ${esc(r.original)}</p>` : ""}
+            ${said ? `<ul class="club-turns">${said}</ul>` : ""}
+            ${r.reason ? `<p class="small"><b>PI:</b> ${esc(r.reason)}</p>` : ""}</details>` : ""}
+        </li>`;
+      })
+      .join("")}</ol>`;
+}
+
 // Closed by default: the summary line says who clashed and how the PI ruled; opening one shows the exchange.
 function disputesSection(ds, key) {
   if (!ds.length) return "";
@@ -375,6 +416,8 @@ function quoteCheck(r) {
     [r.quote_rejected, "map quotes rejected"],
     [r.turn_unverified, "debate turns without a verified quote"],
     [r.direction_rejected, "directions dropped for lack of one"],
+    [r.hypothesis_rejected, "hypotheses dropped for lack of a verified premise"],
+    [r.critique_unverified, "round-2 critiques without a verified quote"],
   ].filter(([n]) => n);
   return `Quote check: every quote on this page was matched word for word against its paper. ${failed.length ? `Failed it: ${failed.map(([n, w]) => `${n} ${w}`).join(", ")}.` : "Nothing failed it."}`;
 }

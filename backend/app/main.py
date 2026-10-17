@@ -225,8 +225,14 @@ def make_abstract(paper_id: int, level: Level = DEFAULT) -> GraphicalAbstract:
 
 @app.get("/papers/{paper_id}/cards")
 def get_cards(paper_id: int, level: Level = DEFAULT) -> SummaryCards:
+    """The saved deck, with `notes_changed` set when the notes have changed since it was made (decks made before
+    notes_hash existed never say so)."""
+    paper = get_paper_or_404(paper_id)
     if not (deck := db.get_cards(paper_id, level)):
         raise HTTPException(404)
+    if deck.notes_hash:
+        notes = [db.get_summary(paper_id, i, level) or PageSummary(notes=[]) for i in range(len(paper.pages))]
+        deck.notes_changed = cards.notes_hash(notes) != deck.notes_hash
     return deck
 
 

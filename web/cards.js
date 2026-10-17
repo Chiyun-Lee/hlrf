@@ -1,25 +1,57 @@
 // Summary cards (backend/app/cards.py), shown under the graphical abstract: TL;DR with headline numbers, logic flow,
 // mind map, key findings, evidence map, caveats, charts redrawn from the paper's own numbers, key figures cropped
 // from the PDF. The quiz lives in quiz.js ("Quiz me ✦").
+//
+// The deck is a snapshot of the notes it was made from: when they have changed since (a tutor's edit, your own), a
+// line offers to remake it. The last card, Reproduction, is live instead: it is read from the paper's agent review
+// (its pins' verdict, claims and main problems, backend/app/pins.py) each time the cards open, and redrawn when a
+// review finishes while they are open.
+
+const STATUS = { // a checked claim's status, as the Reproduction card shows it
+  holds: ["✓", "Holds"],
+  partly: ["◐", "Partly"],
+  fails: ["✗", "Doesn't hold"],
+  untested: ["–", "Not tested"],
+};
 
 // `deck`: a promise of the cards (GET or POST /papers/:id/cards), started by the caller so it can run alongside
 // the abstract.
 async function showCards(el, paperId, deck) {
   el.innerHTML = `<p class="overlay-status">Writing your summary cards…</p>`;
+  const remake = () => showCards(el, paperId, api(atLevel(`/papers/${paperId}/cards`), { method: "POST" }));
+  const checked = reviewed(paperId);
   let c;
   try {
     c = await deck;
   } catch (e) {
     el.innerHTML = `<p class="overlay-status">Couldn't make the summary cards: ${esc(e.message)}</p>
       <div class="cards-retry"><button>Try again</button></div>`;
-    el.querySelector("button").onclick = () => showCards(el, paperId, api(atLevel(`/papers/${paperId}/cards`), { method: "POST" }));
+    el.querySelector("button").onclick = remake;
     return;
   }
-  el.innerHTML = cardsHtml(c);
-  el.querySelector("[data-act=remake-cards]").onclick = () => showCards(el, paperId, api(atLevel(`/papers/${paperId}/cards`), { method: "POST" }));
+  el.innerHTML = cardsHtml(c, paperId, await checked);
+  el.querySelectorAll("[data-act=remake-cards]").forEach((b) => (b.onclick = remake));
 }
 
-function cardsHtml(c) {
+// What the paper's agent review found, for the Reproduction card: its pins (verdict, claims, main problems) and the
+// review's state. Either can be null: the cards read fine without them.
+async function reviewed(paperId) {
+  const [pins, review] = await Promise.all([
+    api(`/papers/${paperId}/pins`).catch(() => null),
+    api(`/papers/${paperId}/review?after=${Number.MAX_SAFE_INTEGER}`).catch(() => null), // the state, not the steps
+  ]);
+  return { pins, review };
+}
+
+// Redraws the Reproduction card of paper `paperId` if its cards are open. Called by review.js when a review ends.
+async function refreshReproduction(paperId) {
+  const card = document.querySelector(`.summary-cards[data-paper="${paperId}"] .sc-repro`);
+  if (!card) return;
+  const html = reproductionCard(+card.dataset.n, paperId, await reviewed(paperId));
+  if (card.isConnected) card.outerHTML = html;
+}
+
+function cardsHtml(c, paperId, checked) {
   let n = 0;
   const card = (label, title, body, wide = false) =>
     `<div class="sc${wide ? " wide" : ""}"><div class="sc-tag">Card ${++n} · ${label}</div><h3>${esc(title)}</h3>${body}</div>`;
@@ -77,11 +109,44 @@ function cardsHtml(c) {
       ),
     );
   out.push(card("Caveats", "Keep in mind", list(c.caveats), true));
+  out.push(reproductionCard(++n, paperId, checked));
 
-  return `<section class="summary-cards">
+  const stale = c.notes_changed
+    ? `<p class="sc-stale" role="status">Your notes changed since these cards were made.
+        <button data-act="remake-cards">Remake cards</button></p>`
+    : "";
+  return `<section class="summary-cards" data-paper="${paperId}">
     <div class="sc-head"><h2>Summary cards</h2><button data-act="remake-cards">Remake cards</button></div>
+    ${stale}
     <div class="sc-grid">${out.join("")}</div>
   </section>`;
+}
+
+// Card n: whether the paper held up when an agent review re-ran its code and tested its claims, from `reviewed`.
+function reproductionCard(n, paperId, { pins, review }) {
+  const wrap = (body) =>
+    `<div class="sc wide sc-repro" data-n="${n}"><div class="sc-tag">Card ${n} · Reproduction</div><h3>Did it hold up?</h3>${body}</div>`;
+  const running = review?.state === "running" ? `<p class="sc-repro-note">A review is running now; this card updates when it finishes.</p>` : "";
+  const claims = pins?.claims ?? [];
+  const problems = pins?.main_problems ?? [];
+  if (!pins?.verdict && !claims.length && !problems.length)
+    return wrap(running || `<p class="sc-repro-note">Not reproduced yet. <b>Run paper2agent review</b> (in the paper's header) re-runs
+      the authors' code and tests these claims; what it finds shows here.</p>`);
+  const table = claims.length
+    ? `<table class="sc-table sc-claims"><tr><th>Claim</th><th>Paper</th><th>Re-run</th><th>Result</th></tr>${claims
+        .map((k) => {
+          const [glyph, name] = STATUS[k.status] ?? STATUS.untested;
+          return `<tr><td>${esc(k.claim)}<span class="sc-check">${esc(k.check)}</span></td><td>${esc(k.paper)}</td>
+            <td>${esc(k.rerun ?? "—")}</td><td><span class="sc-status ${k.status}">${glyph} ${name}</span></td></tr>`;
+        })
+        .join("")}</table>`
+    : "";
+  const report = review?.report ? ` · <a href="/papers/${paperId}/review/report" target="_blank" rel="noopener">Read the full review</a>` : "";
+  return wrap(`${running}
+    ${pins.verdict ? `<p class="sc-verdict">${esc(pins.verdict)}</p>` : ""}
+    ${table}
+    ${problems.length ? `<h4 class="sc-sub">Main problems</h4><ol class="sc-problems">${problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ol>` : ""}
+    <p class="sc-repro-note">${esc(pins.reviewed)}${report}</p>`);
 }
 
 // Four branches around the topic, joined by lines drawn behind them.
