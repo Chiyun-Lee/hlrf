@@ -20,6 +20,7 @@ if "pdf" not in [col[1] for col in conn.execute("PRAGMA table_info(papers)")]:  
     conn.execute("ALTER TABLE papers ADD COLUMN pdf BLOB")
 conn.execute("CREATE TABLE IF NOT EXISTS summaries (paper_id INTEGER, page INTEGER, data TEXT, PRIMARY KEY (paper_id, page))")
 conn.execute("CREATE TABLE IF NOT EXISTS abstracts (paper_id INTEGER PRIMARY KEY, data TEXT)")
+conn.execute("CREATE TABLE IF NOT EXISTS paper_pins (paper_id INTEGER PRIMARY KEY, data TEXT)")  # an agent review's methods pins
 conn.execute("CREATE TABLE IF NOT EXISTS pitches (arxiv_id TEXT PRIMARY KEY, data TEXT)")
 # listed: came from a daily listing (rather than fetched by id, like your own older papers), so it's in a day's feed
 conn.execute("CREATE TABLE IF NOT EXISTS arxiv_papers (id TEXT PRIMARY KEY, listed INTEGER, data TEXT)")
@@ -65,11 +66,20 @@ def sources() -> list[tuple[int, str, str | None]]:
         return conn.execute("SELECT id, url, json_extract(data, '$.arxiv_id') FROM papers ORDER BY id").fetchall()
 
 
+def listing() -> list[tuple]:
+    """(id, title, authors as JSON, year, venue, url, arXiv id, page count) per saved paper, newest first: what the
+    library lists, read by SQLite rather than by loading every record with all its pages."""
+    fields = ", ".join(f"json_extract(data, '$.{f}')" for f in ("title", "authors", "year", "venue", "url", "arxiv_id"))
+    with lock:
+        return conn.execute(f"SELECT id, {fields}, json_array_length(data, '$.pages') FROM papers ORDER BY id DESC").fetchall()
+
+
 def delete(paper_id: int) -> bool:
     with lock, conn:
         cur = conn.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
         conn.execute("DELETE FROM summaries WHERE paper_id = ?", (paper_id,))
         conn.execute("DELETE FROM abstracts WHERE paper_id = ?", (paper_id,))
+        conn.execute("DELETE FROM paper_pins WHERE paper_id = ?", (paper_id,))
     return cur.rowcount > 0
 
 
@@ -96,6 +106,25 @@ def get_abstract(paper_id: int) -> GraphicalAbstract | None:
 def save_abstract(paper_id: int, abstract: GraphicalAbstract) -> None:
     with lock, conn:
         conn.execute("INSERT OR REPLACE INTO abstracts VALUES (?, ?)", (paper_id, abstract.model_dump_json()))
+
+
+def get_paper_pins(paper_id: int) -> "PaperPins | None":
+    """An agent review's methods pins for a library paper (app/pins.py)."""
+    from .schemas import PaperPins
+
+    with lock:
+        row = conn.execute("SELECT data FROM paper_pins WHERE paper_id = ?", (paper_id,)).fetchone()
+    return PaperPins.model_validate_json(row[0]) if row else None
+
+
+def has_paper_pins(paper_id: int) -> bool:
+    with lock:
+        return conn.execute("SELECT 1 FROM paper_pins WHERE paper_id = ?", (paper_id,)).fetchone() is not None
+
+
+def save_paper_pins(paper_id: int, pins: "PaperPins") -> None:
+    with lock, conn:
+        conn.execute("INSERT OR REPLACE INTO paper_pins VALUES (?, ?)", (paper_id, pins.model_dump_json()))
 
 
 def get_pitches(arxiv_ids: list[str]) -> dict[str, Pitch]:

@@ -25,6 +25,7 @@ function rerank() {
 
 async function forYou(day) {
   let feed;
+  typeset(); // start loading MathJax while the feed loads
   try {
     feed = await api(day ? `/feed?day=${day}` : "/feed");
   } catch (e) {
@@ -84,7 +85,7 @@ async function forYou(day) {
   wireZotero(root);
   // The keys act on the selected paper: start on the first one still to sort.
   setCurrent(root, root.querySelector(".fy-paper:not(.sorted)") ?? root.querySelector(".fy-paper"), false);
-  window.MathJax?.typesetPromise?.([root]);
+  typeset(root);
   loadAllSummaries(root, picks, rest);
 }
 
@@ -235,7 +236,7 @@ function showSummary(root, p, pitch) {
   if (pitch === "loading") box.innerHTML = `<p>Summarising for you</p>`;
   else if (pitch) box.innerHTML = `<p class="fy-what"><b>What it does</b> ${esc(pitch.what)}</p><p class="fy-why"><b>Why you’d care</b> ${esc(pitch.why)}</p>`;
   else box.innerHTML = `<p>${esc(p.abstract)}</p>`;
-  window.MathJax?.typesetPromise?.([box]);
+  typeset(box);
 }
 
 // --- actions ---
@@ -258,7 +259,7 @@ async function onClick(root, e) {
     const box = li.querySelector(".fy-abstract");
     box.hidden = !box.hidden;
     e.target.closest(".fy-toggle").setAttribute("aria-expanded", !box.hidden);
-    window.MathJax?.typesetPromise?.([box]);
+    typeset(box);
   }
 }
 
@@ -566,4 +567,19 @@ function joinAnd(items) {
 
 function dateLabel(iso, options = { weekday: "short", day: "numeric", month: "short" }) {
   return new Date(`${iso}T12:00:00`).toLocaleDateString("en-GB", options);
+}
+
+// --- maths: arXiv titles and abstracts carry inline LaTeX ($\Lambda$CDM) ---
+
+// MathJax (over 1 MB) loads the first time it's needed rather than with every view; its config is window.MathJax in
+// index.html. Typesetting runs one call at a time, as MathJax asks. Without MathJax the LaTeX stays as typed.
+const MATHJAX = "https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-chtml.js";
+let maths;
+
+function typeset(...els) {
+  maths ??= new Promise((resolve, reject) =>
+    document.head.append(Object.assign(document.createElement("script"), { src: MATHJAX, onload: resolve, onerror: reject })),
+  ).then(() => MathJax.startup.promise);
+  maths = maths.then(() => els.length && MathJax.typesetPromise(els)).catch(() => {});
+  return maths;
 }

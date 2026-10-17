@@ -1,6 +1,8 @@
 import base64
+import json
 import logging
 import threading
+import zlib
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager
@@ -10,11 +12,12 @@ from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.requests import Request
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import abstract as graphical
-from . import db, extract, feed, llm, pins, pitch, proof, quiz, summarize, tutor
+from . import db, extract, feed, llm, pins, pitch, proof, quiz, review, summarize, tutor
 from .schemas import GraphicalAbstract, Note, PageSummary, Paper, PaperPins, Pitch, Proof, Quiz
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
@@ -47,16 +50,9 @@ def save_paper(req: SaveRequest) -> dict:
 def list_papers() -> list[dict]:
     """Summaries for the library view; fetch /papers/{id} for the full record."""
     return [
-        {
-            "id": pid,
-            "title": p.title,
-            "authors": [a.raw for a in p.authors],
-            "year": p.year,
-            "venue": p.venue,
-            "url": p.url,
-            "n_pages": len(p.pages),
-        }
-        for pid, p in db.list_all()
+        {"id": pid, "title": title, "authors": [a["raw"] for a in json.loads(authors)], "year": year, "venue": venue, "url": url, "n_pages": n_pages,
+         "reviewed": pins.has_pins(pid, url, arxiv_id)}  # has pins from an agent review: the library's "AI reviewed" filter
+        for pid, title, authors, year, venue, url, arxiv_id, n_pages in db.listing()
     ]
 
 
@@ -65,21 +61,32 @@ def get_paper(paper_id: int) -> dict:
     paper = db.get(paper_id)
     if not paper:
         raise HTTPException(404)
-    return {**paper.model_dump(), "has_pdf": db.has_pdf(paper_id), "has_abstract": db.get_abstract(paper_id) is not None}
+    return {
+        **paper.model_dump(),
+        "has_pdf": db.has_pdf(paper_id),
+        "has_abstract": db.get_abstract(paper_id) is not None,
+        "reviewed": pins.has_pins(paper_id, paper.url, paper.arxiv_id),  # has pins from an agent review (review.js)
+    }
 
 
 @app.delete("/papers/{paper_id}", status_code=204)
 def delete_paper(paper_id: int) -> None:
     if not db.delete(paper_id):
         raise HTTPException(404)
+    review.discard(paper_id)  # stop its review and delete its files: SQLite may give its id to the next paper
 
 
 @app.get("/papers/{paper_id}/pdf")
-def get_pdf(paper_id: int) -> Response:
+def get_pdf(paper_id: int, request: Request) -> Response:
     pdf = db.get_pdf(paper_id)
     if not pdf:
         raise HTTPException(404)
-    return Response(pdf, media_type="application/pdf")
+    # The browser keeps the PDF and checks back each time, so an unchanged one costs a 304 rather than megabytes. The
+    # tag is a checksum of the PDF itself: a deleted paper's id goes to the next paper saved (db.save).
+    headers = {"ETag": f'"{len(pdf):x}-{zlib.crc32(pdf):08x}"', "Cache-Control": "no-cache"}
+    if headers["ETag"] in request.headers.get("if-none-match", ""):
+        return Response(status_code=304, headers=headers)
+    return Response(pdf, media_type="application/pdf", headers=headers)
 
 
 summary_locks = defaultdict(threading.Lock)  # one generation per page, even if the viewer asks twice
@@ -139,8 +146,51 @@ def get_summary(paper_id: int, page: int) -> PageSummary:
 
 @app.get("/papers/{paper_id}/pins")
 def get_pins(paper_id: int) -> PaperPins | None:
-    """Methods pins for the paper's figures and tables (app/pins.py); null when it has none."""
-    return pins.for_paper(get_paper_or_404(paper_id))
+    """Methods pins for the paper's figures and tables (app/pins.py): an agent review's, else shipped; null when none."""
+    return pins.for_paper(paper_id, get_paper_or_404(paper_id))
+
+
+# --- Agent review: Claude Code reviews the paper in the background and writes its pins (app/review.py) ---
+
+
+class ReviewRequest(BaseModel):
+    depth: Literal["full", "quick"] = "full"  # full re-runs the authors' code (about 2 h); quick only reads (about 15 min)
+
+
+@app.post("/papers/{paper_id}/review", status_code=202)
+def start_review(paper_id: int, req: ReviewRequest | None = None) -> review.Status:
+    get_paper_or_404(paper_id)
+    try:
+        return review.start(paper_id, (req or ReviewRequest()).depth)
+    except review.CantStart as e:
+        raise HTTPException(e.status, str(e))
+
+
+@app.get("/papers/{paper_id}/review")
+def get_review(paper_id: int, after: int = 0) -> review.Status | None:
+    """The review's state, with its live view from event `after` on; null if the paper was never reviewed."""
+    get_paper_or_404(paper_id)
+    return review.status(paper_id, after)
+
+
+@app.delete("/papers/{paper_id}/review", status_code=204)
+def stop_review(paper_id: int) -> None:
+    get_paper_or_404(paper_id)
+    review.stop(paper_id)
+
+
+@app.get("/papers/{paper_id}/review/report")
+def get_review_report(paper_id: int) -> Response:
+    """The review itself, as Markdown."""
+    if (text := review.report(paper_id)) is None:
+        raise HTTPException(404)
+    return Response(text, media_type="text/plain; charset=utf-8")
+
+
+@app.get("/reviews")
+def list_reviews() -> dict[str, dict]:
+    """{paper_id: {state, depth, progress, stage_title}} for every paper with a review, running or finished."""
+    return review.all_reviews()
 
 
 @app.get("/papers/{paper_id}/abstract")
