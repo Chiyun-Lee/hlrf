@@ -1,10 +1,12 @@
-"""For you: each day's new arXiv papers in your categories, ranked for you, with a daily goal and a streak.
+"""For you: each day's new papers in your arXiv categories and bioRxiv subjects, ranked for you, with a daily goal and a
+streak.
 
-Papers come straight from the arXiv API (app/arxiv.py), at most once an hour; the ranking is app/ranker.py. It learns
+Papers come straight from the arXiv API (app/arxiv.py) and the bioRxiv API (app/biorxiv.py), at most once an hour; you
+pick what to follow in the tab's Sources panel. The ranking is app/ranker.py. It learns
 from your own papers ("Your papers" in the tab: arXiv ids, or an INSPIRE profile, app/profiles.py, re-checked
 daily), your Zotero library (a linked BibTeX export, app/zotero.py), More like this / Not for me, the papers you
-open, and every library paper that's on arXiv.
-Set FEED_CATEGORIES in backend/.env to follow other categories (default astro-ph.CO).
+open, and every library paper that's on arXiv or bioRxiv.
+FEED_CATEGORIES in backend/.env sets the arXiv categories followed until you pick some (default astro-ph.CO).
 """
 
 import json
@@ -18,12 +20,14 @@ from pathlib import Path
 
 import httpx
 
-from . import arxiv, db, profiles, ranker, zotero
+from . import arxiv, biorxiv, db, profiles, ranker, zotero
 from .schemas import ArxivPaper
 
 log = logging.getLogger(__name__)
 
-CATEGORIES = os.environ.get("FEED_CATEGORIES", "astro-ph.CO").split()
+DEFAULT_CATEGORIES = os.environ.get("FEED_CATEGORIES", "astro-ph.CO").split()
+FETCHERS = {"arxiv": arxiv, "biorxiv": biorxiv}  # source -> its module, with recent(categories, days)
+NAMES = {"arxiv": "arXiv", "biorxiv": "bioRxiv"}
 REFRESH_EVERY = timedelta(hours=1)
 PROFILE_SYNC_EVERY = timedelta(days=1)  # how often linked profiles are checked for new papers
 # Days of papers to fetch the first time, then on each refresh. The first fetch also gives the ranking its "not liked"
@@ -35,6 +39,8 @@ PROFILE_PAPERS = 12  # of your own and of your liked papers, as context for the 
 ARXIV_ID = arxiv.ID
 ARXIV_URL = re.compile(rf"arxiv\.org/(?:abs|pdf|html)/({ARXIV_ID})(?:v\d+)?", re.I)
 ARXIV_CLAIM = re.compile(rf"^(?:arxiv:)?\s*({ARXIV_ID})(?:v\d+)?$", re.I)
+# bioRxiv DOIs: 10.1101/2026.10.07.757433 (and 10.64898/... since late 2025), or 10.1101/123456 before 2020
+BIORXIV_URL = re.compile(r"biorxiv\.org/content/(10\.\d{4,9}/(?:\d{4}\.\d{2}\.\d{2}\.)?\d+)", re.I)
 
 refresh_lock = threading.Lock()
 sync_lock = threading.Lock()
@@ -56,6 +62,11 @@ def arxiv_id(url: str, claimed: str | None = None) -> str | None:
     if claimed and (m := ARXIV_CLAIM.match(claimed.strip())):
         return m.group(1)
     return None
+
+
+def biorxiv_doi(url: str) -> str | None:
+    """A bioRxiv preprint's DOI, from its URL (any version, abstract or PDF)."""
+    return m.group(1) if (m := BIORXIV_URL.search(url)) else None
 
 
 def ids_in(text: str) -> list[str]:
@@ -95,7 +106,7 @@ def daily(day: date | None = None) -> dict:
         "day": day.isoformat() if day else None,
         "older": next((d.isoformat() for d in days if day and d < day), None),
         "newer": next((d.isoformat() for d in reversed(days) if day and d > day), None),
-        "categories": CATEGORIES,
+        "sources": s.sources,
         "method": "model" if model else "newest",
         "notice": notice,
         "learning": s.learning(),
@@ -118,10 +129,39 @@ def profile() -> dict:
     reading = sorted(s.papers_for(s.kinds["zotero"]), key=lambda p: p.published, reverse=True)[:PROFILE_PAPERS]
     brief = lambda p: {"id": p.id, "title": p.title, "abstract": p.abstract}  # noqa: E731
     return {
-        "categories": CATEGORIES,
+        "sources": s.sources,
         "mine": [brief(p) for p in mine],
         "liked": [brief(p) for p in liked],
         "zotero": [brief(p) for p in reading],
+    }
+
+
+# --- what to follow ---
+
+
+def sources() -> dict[str, list[str]]:
+    """{"arxiv": categories, "biorxiv": subjects}, as picked in the Sources panel; until then FEED_CATEGORIES."""
+    return json.loads(db.get_meta("sources") or "null") or {"arxiv": DEFAULT_CATEGORIES, "biorxiv": []}
+
+
+def set_sources(categories: list[str], subjects: list[str]) -> dict[str, list[str]]:
+    """Follow these arXiv categories and bioRxiv subjects. The next refresh fetches FIRST_DAYS of any new ones."""
+    chosen = {"arxiv": list(dict.fromkeys(categories)), "biorxiv": list(dict.fromkeys(subjects))}
+    unknown = [c for c in chosen["arxiv"] if c not in arxiv.CATEGORIES] + [s for s in chosen["biorxiv"] if s not in biorxiv.SUBJECTS]
+    if unknown:
+        raise FeedError("bad_request", f"For you doesn't know {', '.join(unknown)}.")
+    if not any(chosen.values()):
+        raise FeedError("bad_request", "Pick at least one arXiv category or bioRxiv subject.")
+    db.set_meta("sources", json.dumps(chosen))
+    return chosen
+
+
+def source_options() -> dict:
+    """Everything the Sources panel offers, grouped as it shows them, and what you follow now."""
+    return {
+        "arxiv": [{"group": g, "categories": [{"code": c, "name": n} for c, n in cats.items()]} for g, cats in arxiv.CATEGORY_GROUPS.items()],
+        "biorxiv": biorxiv.SUBJECTS,
+        "selected": sources(),
     }
 
 
@@ -281,29 +321,41 @@ def sync_profiles() -> None:
 
 
 def refresh() -> str | None:
-    """Fetch new papers if the last fetch is over an hour old (or the categories changed).
+    """Fetch each source's new papers if its last fetch is over an hour old, and FIRST_DAYS of any category you've
+    just started following.
 
-    Returns a notice when arXiv can't be reached but papers fetched earlier can still be shown.
+    Returns a notice when a source can't be reached but papers fetched earlier can still be shown.
     """
+    notices = []
     with refresh_lock:
-        last, cats = db.get_meta("fetched_at"), db.get_meta("categories")
-        # A first fetch, new categories, or a history from when FIRST_DAYS was shorter: go back FIRST_DAYS.
-        first = last is None or cats != " ".join(CATEGORIES) or db.get_meta("history_days") != str(FIRST_DAYS)
-        if not first and datetime.now(timezone.utc) - datetime.fromisoformat(last) < REFRESH_EVERY:
-            return None
-        try:
-            papers = arxiv.recent(CATEGORIES, FIRST_DAYS if first else DAYS)
-        except httpx.HTTPError as e:
-            log.warning("arXiv fetch failed: %r", e)
-            if db.arxiv_count():
-                return f"Couldn't reach arXiv ({type(e).__name__}), so these are the papers fetched earlier."
-            raise FeedError("unreachable", f"Couldn't reach arXiv ({type(e).__name__}). Check your connection and try again.")
-        db.save_arxiv(papers, listed=True)
-        db.set_meta("fetched_at", datetime.now(timezone.utc).isoformat())
-        db.set_meta("categories", " ".join(CATEGORIES))
-        if first:
-            db.set_meta("history_days", str(FIRST_DAYS))
-    return None
+        for source, wanted in sources().items():
+            if not wanted:
+                continue
+            try:
+                refresh_source(source, wanted)
+            except (httpx.HTTPError, ValueError) as e:  # ValueError: a reply that isn't what the API promises
+                log.warning("%s fetch failed: %r", source, e)
+                if not db.arxiv_count():
+                    raise FeedError("unreachable", f"Couldn't reach {NAMES[source]} ({type(e).__name__}). Check your connection and try again.")
+                notices.append(f"Couldn't reach {NAMES[source]} ({type(e).__name__}), so these are its papers fetched earlier.")
+    return " ".join(notices) or None
+
+
+def refresh_source(source: str, wanted: list[str]) -> None:
+    key = f"fetched:{source}"
+    # at: the last hourly fetch; have: the categories fetched FIRST_DAYS back (none if FIRST_DAYS has grown since).
+    last = json.loads(db.get_meta(key) or "{}")
+    have = set(last.get("have", [])) if last.get("days") == FIRST_DAYS else set()
+    new, old = [c for c in wanted if c not in have], [c for c in wanted if c in have]
+    now = datetime.now(timezone.utc)
+    due = bool(old) and now - datetime.fromisoformat(last["at"]) >= REFRESH_EVERY
+    if new:
+        db.save_arxiv(FETCHERS[source].recent(new, FIRST_DAYS), listed=True)
+    if due:
+        db.save_arxiv(FETCHERS[source].recent(old, DAYS), listed=True)
+    if new or due:
+        at = now.isoformat() if due or not old else last["at"]
+        db.set_meta(key, json.dumps({"at": at, "have": wanted, "days": FIRST_DAYS}))
 
 
 # --- one request's view of the data ---
@@ -312,20 +364,28 @@ def refresh() -> str | None:
 class State:
     """Stored papers, your signals and the library, loaded once per request."""
 
-    def __init__(self, stored: dict[str, tuple[ArxivPaper, bool]], signals: list[tuple[str, str]], library: dict[str, int]):
+    def __init__(
+        self,
+        stored: dict[str, tuple[ArxivPaper, bool]],
+        signals: list[tuple[str, str]],
+        library: dict[str, int],
+        follows: dict[str, list[str]],
+    ):
         self.stored = stored
         self.kinds = {k: [i for i, kind in signals if kind == k] for k in ("up", "down", "click", "mine", "zotero")}  # newest first
-        self.library = library  # arXiv id -> library paper id
-        # Papers in a day's feed: from a daily listing, in your categories.
-        self.listed = [p for p, listed in stored.values() if listed and set(p.categories) & set(CATEGORIES)]
+        self.library = library  # arXiv id or bioRxiv DOI -> library paper id
+        self.sources = follows
+        # Papers in a day's feed: from a daily listing, in a category you follow on that source.
+        wanted = {source: set(cats) for source, cats in follows.items()}
+        self.listed = [p for p, listed in stored.values() if listed and wanted.get(p.source, set()) & set(p.categories)]
 
     @classmethod
     def load(cls) -> "State":
         library = {}
         for pid, url, claimed in db.sources():
-            if aid := arxiv_id(url, claimed):
-                library.setdefault(aid, pid)
-        return cls({p.id: (p, listed) for p, listed in db.all_arxiv()}, db.signals(), library)
+            if key := arxiv_id(url, claimed) or biorxiv_doi(url):
+                library.setdefault(key, pid)
+        return cls({p.id: (p, listed) for p, listed in db.all_arxiv()}, db.signals(), library, sources())
 
     def papers_for(self, ids: list[str]) -> list[ArxivPaper]:
         return [self.stored[i][0] for i in ids if i in self.stored]
@@ -370,9 +430,10 @@ class State:
 
     def fetch_missing(self, ids) -> int:
         """Store any of these papers we don't have yet (older papers of yours, library papers), fetched by id.
-        Returns how many were stored; ids arXiv doesn't know are remembered and not asked for again."""
+        Returns how many were stored; ids arXiv doesn't know are remembered and not asked for again. bioRxiv papers
+        only come from the daily fetch, so their DOIs are skipped."""
         unknown = set((db.get_meta("not_on_arxiv") or "").split())
-        missing = sorted(i for i in ids if i not in self.stored and i not in unknown)
+        missing = sorted(i for i in ids if i not in self.stored and i not in unknown and re.fullmatch(ARXIV_ID, i))
         if not missing:
             return 0
         papers = arxiv.by_ids(missing)

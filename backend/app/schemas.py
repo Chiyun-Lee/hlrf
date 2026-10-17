@@ -108,26 +108,31 @@ class Pitches(BaseModel):
 
 
 class ArxivPaper(BaseModel):
-    """A new arXiv paper as For you stores and ranks it (app/arxiv.py)."""
+    """A new paper as For you stores and ranks it: from arXiv (app/arxiv.py) or bioRxiv (app/biorxiv.py)."""
 
-    id: str  # without the version: 2410.01234 or hep-th/0101001
+    id: str  # arXiv: without the version, 2410.01234 or hep-th/0101001; bioRxiv: the DOI
     version: int = 1
     title: str
     abstract: str
     authors: list[str]
-    categories: list[str]  # primary first
+    categories: list[str]  # primary first; a bioRxiv paper has one, its subject
     published: datetime
-    listing_date: date  # the day it appears in arXiv's daily "new" listing
+    listing_date: date  # the day it appears in For you: arXiv's daily "new" listing, or the weekday bioRxiv posted it
     comment: str | None = None
     journal_ref: str | None = None
     doi: str | None = None
+    source: Literal["arxiv", "biorxiv"] = "arxiv"
 
     @property
     def abs_url(self) -> str:
+        if self.source == "biorxiv":
+            return f"https://www.biorxiv.org/content/{self.id}v{self.version}"
         return f"https://arxiv.org/abs/{self.id}"
 
     @property
     def pdf_url(self) -> str:
+        if self.source == "biorxiv":
+            return f"{self.abs_url}.full.pdf"
         return f"https://arxiv.org/pdf/{self.id}"
 
 

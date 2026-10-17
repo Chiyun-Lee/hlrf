@@ -251,6 +251,22 @@ def post_feedback(arxiv_id: str, req: FeedbackRequest) -> dict:
     return feed_call(feed.feedback, arxiv_id, req.kind)
 
 
+@app.get("/feed/sources")
+def get_sources() -> dict:
+    """The arXiv categories and bioRxiv subjects For you can follow, and which you follow now."""
+    return feed.source_options()
+
+
+class SourcesRequest(BaseModel):
+    arxiv: list[str] = []  # category codes, e.g. astro-ph.CO
+    biorxiv: list[str] = []  # subject names, e.g. Neuroscience
+
+
+@app.put("/feed/sources")
+def put_sources(req: SourcesRequest) -> dict[str, list[str]]:
+    return feed_call(feed.set_sources, req.arxiv, req.biorxiv)
+
+
 class MineRequest(BaseModel):
     text: str  # arXiv ids or links, or an INSPIRE profile link
 

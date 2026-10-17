@@ -1,4 +1,5 @@
-// For you: the latest arXiv listing ranked for you (backend/app/feed.py, ranker.py), as a quick daily triage.
+// For you: each day's new papers from the arXiv categories and bioRxiv subjects you pick under Sources, ranked for you
+// (backend/app/feed.py, ranker.py), as a quick daily triage.
 // Every paper gets a short summary, top picks first: what it does and why you'd care, given your own papers
 // (backend/app/pitch.py). Sorting a paper (Add to library, More like this, Not for me) trains the ranking and counts
 // toward a daily goal; meeting it on consecutive listing days builds a streak. Keys: j/k move, a/m/n sort, o opens.
@@ -14,6 +15,13 @@ const ORDER = {
 };
 let mineFlash = null; // set before re-rendering after an add or remove: keeps Your papers open, with this message
 let zoteroFlash = null; // the same for the Zotero library panel
+let sourcesFlash = null; // and for Sources
+const pitches = new Map(); // paper id → summary already written, so re-ranking the page doesn't blank them
+
+// Re-rank in place after Sources, Your papers or Zotero change: no "Loading…" page or jump to the top, as route() does.
+function rerank() {
+  return forYou(location.hash.match(/^#\/for-you\/(\d{4}-\d{2}-\d{2})$/)?.[1]);
+}
 
 async function forYou(day) {
   let feed;
@@ -27,8 +35,10 @@ async function forYou(day) {
     return;
   }
   if (!feed.day) {
-    app.innerHTML = `<section class="fy-setup"><h1>No papers yet</h1>
-      <p>arXiv returned no recent papers in ${esc(feed.categories.join(", "))}. Check <code>FEED_CATEGORIES</code> in <code>backend/.env</code>.</p></section>`;
+    app.innerHTML = `<div class="fy"><section class="fy-setup"><h1>No papers yet</h1>
+      <p>There are no recent papers in ${esc(sourceLabel(feed.sources))}. Pick other sources below.</p></section>
+      ${sourcesPanel(feed.sources, true)}</div>`;
+    wireSources(app.querySelector(".fy"));
     return;
   }
 
@@ -53,9 +63,10 @@ async function forYou(day) {
           ${feed.older ? `<a href="#/for-you/${feed.older}" rel="prev"><span aria-hidden="true">‹</span> ${dateLabel(feed.older)}</a>` : ""}
           ${feed.newer ? `<a href="#/for-you/${feed.newer}" rel="next">${dateLabel(feed.newer)} <span aria-hidden="true">›</span></a>` : ""}
         </nav>
-        <p class="fy-sub">${feed.papers.length} papers in ${esc(feed.categories.join(", "))}, ${ORDER[feed.method]}.</p>
+        <p class="fy-sub">${feed.papers.length} papers in <button type="button" class="fy-sources-link" data-sources title="Change which arXiv and bioRxiv categories you follow">${esc(sourceLabel(feed.sources))}</button>, ${ORDER[feed.method]}.</p>
       </header>
       <section class="fy-goal" aria-live="polite"></section>
+      ${sourcesPanel(feed.sources)}
       ${minePanel(feed.mine, feed.profiles)}
       ${zoteroPanel(feed.zotero)}
       <p class="fy-notice"${feed.notice ? "" : " hidden"}>${esc(feed.notice ?? "")}</p>
@@ -68,6 +79,7 @@ async function forYou(day) {
   root.state = state;
   renderGoal(root);
   root.addEventListener("click", (e) => onClick(root, e));
+  wireSources(root);
   wireMine(root);
   wireZotero(root);
   // The keys act on the selected paper: start on the first one still to sort.
@@ -79,7 +91,8 @@ async function forYou(day) {
 // --- rendering ---
 
 function paperEntry(p, full) {
-  const meta = [p.categories.join(", "), p.comment].filter(Boolean).map(esc).join('<span class="sep"></span>');
+  const site = p.source === "biorxiv" ? "bioRxiv" : "arXiv";
+  const meta = [p.source === "biorxiv" && site, p.categories.join(", "), p.comment].filter(Boolean).map(esc).join('<span class="sep"></span>');
   return `
     <li class="fy-paper ${full ? "pick" : "brief"}${sortedClass(p)}" data-id="${esc(p.id)}">
       ${p.score != null ? `<span class="fy-rank" aria-hidden="true">${p.rank}</span>` : ""}
@@ -95,7 +108,7 @@ function paperEntry(p, full) {
           <button type="button" class="fy-btn fy-thumb" data-kind="down" aria-pressed="${p.feedback === "down"}">${thumbLabel(p, "down")}<kbd>N</kbd></button>
           <span class="fy-links">
             <button type="button" class="fy-toggle" aria-expanded="false">Abstract</button>
-            <a href="${esc(p.abs_url)}" target="_blank" rel="noopener" data-click>arXiv</a>
+            <a href="${esc(p.abs_url)}" target="_blank" rel="noopener" data-click>${site}</a>
             <a href="${esc(p.pdf_url)}" target="_blank" rel="noopener" data-click>PDF</a>
           </span>
           ${full && p.score != null ? `<span class="fy-score" title="Your model's ranking score for this paper, 0 to 1">${p.score.toFixed(2)}</span>` : ""}
@@ -167,7 +180,7 @@ function renderGoal(root, celebrate = false) {
     <p class="fy-hint">${hint}</p>
     <p class="fy-keys">Keys: <kbd>J</kbd> <kbd>K</kbd> move, <kbd>A</kbd> add to library, <kbd>M</kbd> more like this, <kbd>N</kbd> not for me, <kbd>O</kbd> open</p>
     ${unlock}`;
-  goalEl.querySelector("[data-rerank]")?.addEventListener("click", route);
+  goalEl.querySelector("[data-rerank]")?.addEventListener("click", rerank);
 }
 
 const FLAME = `<svg class="fy-flame" viewBox="0 0 16 20" aria-hidden="true"><path d="M8.6 1c.7 3.4 4.9 5.5 4.9 10.6A5.5 5.5 0 0 1 2.5 12.3c0-2.6 1.4-4.3 2.6-5.5.2 1.5.8 2.6 1.8 3.2C7.3 7 7.4 3.8 8.6 1Z"/></svg>`;
@@ -181,8 +194,11 @@ function updateProgress(root, res) {
 
 // --- summaries ---
 
-// The picks first, since they're read first; then the rest of the day in parallel batches.
+// The picks first, since they're read first; then the rest of the day in parallel batches. Ones already written show at once.
 async function loadAllSummaries(root, picks, rest) {
+  [...picks, ...rest].filter((p) => pitches.has(p.id)).forEach((p) => showSummary(root, p, pitches.get(p.id)));
+  picks = picks.filter((p) => !pitches.has(p.id));
+  rest = rest.filter((p) => !pitches.has(p.id));
   rest.forEach((p) => showSummary(root, p, "loading"));
   await loadSummaries(root, picks);
   const batches = [];
@@ -197,6 +213,7 @@ async function loadSummaries(root, papers) {
   try {
     const body = JSON.stringify({ papers: papers.map(({ id, title, abstract, reasons }) => ({ id, title, abstract, reasons })) });
     const found = await api("/feed/summaries", { method: "POST", headers: JSON_HEADERS, body });
+    Object.entries(found).forEach(([id, pitch]) => pitches.set(id, pitch));
     papers.forEach((p) => showSummary(root, p, found[p.id] ?? null));
   } catch (e) {
     root.state.summaries = false;
@@ -273,7 +290,7 @@ async function addToLibrary(root, li, p, moveOn) {
     const meta = {
       citation_title: [p.title],
       citation_author: p.authors,
-      citation_arxiv_id: [p.id],
+      ...(p.source === "biorxiv" ? {} : { citation_arxiv_id: [p.id] }),
       citation_pdf_url: [p.pdf_url],
       citation_date: [p.published.slice(0, 10)],
       ...(p.doi ? { citation_doi: [p.doi] } : {}),
@@ -328,6 +345,101 @@ document.addEventListener("keydown", (e) => {
   if (target) card.querySelector(target)?.click();
 });
 
+// --- sources: the arXiv categories and bioRxiv subjects each day's papers come from ---
+
+function sourceLabel(sources) {
+  const parts = [];
+  if (sources.arxiv.length) parts.push(`${joinAnd(sources.arxiv)} on arXiv`);
+  if (sources.biorxiv.length) parts.push(`${joinAnd(sources.biorxiv)} on bioRxiv`);
+  return joinAnd(parts);
+}
+
+// The checkboxes load when the panel first opens.
+function sourcesPanel(sources, open = false) {
+  return `
+    <details class="fy-mine fy-sources"${open || sourcesFlash !== null ? " open" : ""}>
+      <summary>arXiv and bioRxiv categories <span class="fy-mine-count">${sources.arxiv.length + sources.biorxiv.length}</span></summary>
+      <p class="fy-mine-help">Pick where each day’s papers come from. A new category brings in its last month of papers, which can take a minute.</p>
+      <form class="fy-sources-form">
+        <div class="fy-sources-pick"></div>
+        <button type="submit" class="fy-btn fy-primary" disabled>Save sources</button>
+      </form>
+      <p class="fy-mine-msg" role="status">${esc(sourcesFlash ?? "")}</p>
+    </details>`;
+}
+
+function sourcePicker({ arxiv, biorxiv, selected }) {
+  const on = new Set([...selected.arxiv, ...selected.biorxiv]);
+  const box = (name, value, label) => `<label><input type="checkbox" name="${name}" value="${esc(value)}"${on.has(value) ? " checked" : ""} /> <span>${label}</span></label>`;
+  // arXiv's groups start folded, except those you already follow something in.
+  const groups = arxiv.map(
+    ({ group, categories }) => `
+      <details class="fy-group"${categories.some((c) => on.has(c.code)) ? " open" : ""}>
+        <summary>${esc(group)} <span class="fy-group-count"></span></summary>
+        <div class="fy-checks">${categories.map((c) => box("arxiv", c.code, `<code>${esc(c.code)}</code> ${esc(c.name)}`)).join("")}</div>
+      </details>`,
+  );
+  return `
+    <fieldset><legend>arXiv</legend>${groups.join("")}</fieldset>
+    <fieldset><legend>bioRxiv <span class="fy-group-count"></span></legend>
+      <div class="fy-checks">${biorxiv.map((s) => box("biorxiv", s, esc(s))).join("")}</div>
+    </fieldset>`;
+}
+
+// How many are picked in each arXiv group and on bioRxiv, so folded groups still show it.
+function countPicked(form) {
+  form.querySelectorAll(".fy-group, fieldset").forEach((el) => {
+    const count = el.querySelector(":scope > summary .fy-group-count, :scope > legend .fy-group-count");
+    const n = el.querySelectorAll("input:checked").length;
+    if (count) count.textContent = n ? `${n} picked` : "";
+  });
+}
+
+function wireSources(root) {
+  sourcesFlash = null;
+  const panel = root.querySelector(".fy-sources");
+  const form = panel.querySelector("form");
+  const button = form.querySelector("button");
+  const message = panel.querySelector(".fy-mine-msg");
+  let loading = null;
+  const load = () => {
+    if (!panel.open || loading) return;
+    loading = api("/feed/sources")
+      .then((options) => {
+        form.querySelector(".fy-sources-pick").innerHTML = sourcePicker(options);
+        countPicked(form);
+        button.disabled = false;
+      })
+      .catch((e) => {
+        loading = null; // try again on the next open
+        message.textContent = `Couldn’t load the categories: ${e.message}`;
+      });
+  };
+  panel.addEventListener("toggle", load);
+  load();
+  // The categories named in the header open this panel too.
+  root.querySelector("[data-sources]")?.addEventListener("click", () => {
+    panel.open = true;
+    panel.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  });
+  form.addEventListener("change", () => countPicked(form));
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const picked = (name) => [...form.querySelectorAll(`input[name="${name}"]:checked`)].map((i) => i.value);
+    button.disabled = true;
+    message.textContent = "Saving, and fetching papers from anything new…";
+    try {
+      const body = JSON.stringify({ arxiv: picked("arxiv"), biorxiv: picked("biorxiv") });
+      const chosen = await api("/feed/sources", { method: "PUT", headers: JSON_HEADERS, body });
+      sourcesFlash = `Saved. Papers now come from ${sourceLabel(chosen)}.`;
+      await rerank();
+    } catch (err) {
+      message.textContent = err.message;
+      button.disabled = false;
+    }
+  });
+}
+
 // --- your papers: what the ranking and each "why you'd care" start from ---
 
 function minePanel(mine, profiles) {
@@ -342,7 +454,7 @@ function minePanel(mine, profiles) {
         .join("")}</ul>`
     : "";
   return `
-    <details class="fy-mine"${mine.length && mineFlash === null ? "" : " open"}>
+    <details class="fy-mine fy-yours"${mine.length && mineFlash === null ? "" : " open"}>
       <summary>Your papers <span class="fy-mine-count">${mine.length}</span></summary>
       <p class="fy-mine-help">${
         mine.length
@@ -361,7 +473,7 @@ function minePanel(mine, profiles) {
 
 function wireMine(root) {
   mineFlash = null;
-  const panel = root.querySelector(".fy-mine");
+  const panel = root.querySelector(".fy-yours");
   const message = panel.querySelector(".fy-mine-msg");
   panel.querySelector("form").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -378,7 +490,7 @@ function wireMine(root) {
       }
       if (res.unknown.length) notes.push(`arXiv doesn’t know ${res.unknown.join(", ")}.`);
       mineFlash = notes.join(" ");
-      route(); // re-rank with your papers
+      await rerank(); // with your papers
     } catch (err) {
       message.textContent = err.message;
       button.disabled = false;
@@ -394,7 +506,7 @@ function wireMine(root) {
       await api(`/feed/mine/${button.dataset.id}`, { method: "DELETE" });
       mineFlash = "";
     }
-    route();
+    rerank();
   });
 }
 
@@ -429,7 +541,7 @@ function wireZotero(root) {
     try {
       const res = await api("/feed/zotero", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ path: e.target.path.value }) });
       zoteroFlash = `Linked. ${res.on_arxiv} of its ${res.entries} entries are on arXiv and now shape your ranking.`;
-      route();
+      await rerank();
     } catch (err) {
       message.textContent = err.message;
       button.disabled = false;
@@ -438,7 +550,7 @@ function wireZotero(root) {
   panel.querySelector("[data-unlink-zotero]")?.addEventListener("click", async () => {
     await api("/feed/zotero", { method: "DELETE" });
     zoteroFlash = "Unlinked. Your Zotero papers no longer shape the ranking.";
-    route();
+    rerank();
   });
 }
 

@@ -1,10 +1,11 @@
+import json
 from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app import arxiv, db, extract, feed, llm
+from app import arxiv, biorxiv, db, extract, feed, llm
 from app.main import app
 from app.schemas import Paper, Pitch, Pitches
 from helpers import COSMOLOGY, FRIDAY, QUBITS, THURSDAY, arxiv_paper
@@ -19,20 +20,30 @@ LISTING = [
     arxiv_paper("2610.50001", "Off-category paper", category="cond-mat.str-el"),
 ]
 MINE = [arxiv_paper(f"2207.0150{i}", t, day=THURSDAY - timedelta(days=900)) for i, t in enumerate(COSMOLOGY)]
+# Friday on bioRxiv: a neuroscience preprint and a genomics one.
+PREPRINTS = [
+    arxiv_paper("10.64898/2026.10.15.000001", "Hippocampal replay during sleep", category="Neuroscience").model_copy(update={"source": "biorxiv"}),
+    arxiv_paper("10.64898/2026.10.15.000002", "Long-read assembly of the axolotl genome", category="Genomics").model_copy(update={"source": "biorxiv"}),
+]
 
 
 @pytest.fixture(autouse=True)
 def fresh(monkeypatch):
-    """An empty For you, with arXiv replaced by LISTING (recent) and MINE (by id)."""
+    """An empty For you, with arXiv replaced by LISTING (recent) and MINE (by id), and bioRxiv by PREPRINTS."""
     with db.lock, db.conn:
         for table in ("papers", "pitches", "arxiv_papers", "feed_signals", "feed_meta"):
             db.conn.execute(f"DELETE FROM {table}")
     monkeypatch.setattr(feed, "corpus", None)
-    calls = {"recent": 0, "by_ids": []}
+    calls = {"recent": 0, "fetched": [], "by_ids": []}
 
     def recent(categories, days):
         calls["recent"] += 1
+        calls["fetched"].append(("arxiv", categories, days))
         return LISTING
+
+    def recent_preprints(subjects, days):
+        calls["fetched"].append(("biorxiv", subjects, days))
+        return [p for p in PREPRINTS if p.categories[0] in subjects]
 
     def by_ids(ids):
         calls["by_ids"].append(ids)
@@ -40,6 +51,7 @@ def fresh(monkeypatch):
 
     monkeypatch.setattr(arxiv, "recent", recent)
     monkeypatch.setattr(arxiv, "by_ids", by_ids)
+    monkeypatch.setattr(biorxiv, "recent", recent_preprints)
     return calls
 
 
@@ -131,10 +143,69 @@ def test_arxiv_down(fresh, monkeypatch):
 
     monkeypatch.setattr(arxiv, "recent", lambda c, d: LISTING)
     client.get("/feed")
-    db.set_meta("fetched_at", (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat())
+    an_hour_late()
     monkeypatch.setattr(arxiv, "recent", down)
     data = client.get("/feed").json()
     assert "fetched earlier" in data["notice"] and len(data["papers"]) == 2
+
+
+def an_hour_late(source="arxiv"):
+    """Make the last hourly fetch from `source` two hours old."""
+    last = json.loads(db.get_meta(f"fetched:{source}"))
+    db.set_meta(f"fetched:{source}", json.dumps({**last, "at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()}))
+
+
+# --- Sources: what to follow on arXiv and bioRxiv ---
+
+
+def test_sources_start_from_feed_categories_and_are_checked(fresh):
+    options = client.get("/feed/sources").json()
+    assert options["selected"] == {"arxiv": ["astro-ph.CO"], "biorxiv": []}
+    assert options["arxiv"][0]["group"] == "Astrophysics"
+    assert {"code": "astro-ph.CO", "name": "Cosmology and Nongalactic Astrophysics"} in options["arxiv"][0]["categories"]
+    assert "Neuroscience" in options["biorxiv"] and "Epidemiology" not in options["biorxiv"]  # medRxiv's now
+
+    bad = client.put("/feed/sources", json={"arxiv": ["astro-ph.XX"], "biorxiv": ["Astrology"]})
+    assert bad.status_code == 400 and "astro-ph.XX, Astrology" in bad.json()["detail"]["message"]
+    empty = client.put("/feed/sources", json={"arxiv": [], "biorxiv": []})
+    assert empty.status_code == 400 and "at least one" in empty.json()["detail"]["message"]
+    assert client.get("/feed/sources").json()["selected"]["arxiv"] == ["astro-ph.CO"]  # unchanged
+
+
+def test_following_biorxiv_adds_its_papers_without_refetching_arxiv(fresh):
+    client.get("/feed")
+    chosen = client.put("/feed/sources", json={"arxiv": ["astro-ph.CO"], "biorxiv": ["Neuroscience"]}).json()
+    assert chosen == {"arxiv": ["astro-ph.CO"], "biorxiv": ["Neuroscience"]}
+    data = client.get("/feed").json()
+    assert data["sources"] == chosen
+    papers = {p["id"]: p for p in data["papers"]}
+    assert set(papers) == {"2610.30001", "2610.30002", "10.64898/2026.10.15.000001"}  # not the genomics preprint
+    preprint = papers["10.64898/2026.10.15.000001"]
+    assert (preprint["source"], preprint["abs_url"]) == ("biorxiv", "https://www.biorxiv.org/content/10.64898/2026.10.15.000001v1")
+    assert fresh["fetched"] == [("arxiv", ["astro-ph.CO"], feed.FIRST_DAYS), ("biorxiv", ["Neuroscience"], feed.FIRST_DAYS)]
+
+    client.put("/feed/sources", json={"biorxiv": ["Neuroscience"]})
+    assert [p["id"] for p in client.get("/feed").json()["papers"]] == ["10.64898/2026.10.15.000001"]
+    assert len(fresh["fetched"]) == 2  # nothing new to fetch
+
+
+def test_a_new_category_fetches_its_month_and_the_rest_stay_hourly(fresh):
+    client.get("/feed")
+    client.put("/feed/sources", json={"arxiv": ["astro-ph.CO", "cond-mat.str-el"]})
+    assert "2610.50001" in {p["id"] for p in client.get("/feed").json()["papers"]}  # the off-category paper, now followed
+    assert fresh["fetched"][1:] == [("arxiv", ["cond-mat.str-el"], feed.FIRST_DAYS)]
+    an_hour_late()
+    client.get("/feed")
+    assert fresh["fetched"][2:] == [("arxiv", ["astro-ph.CO", "cond-mat.str-el"], feed.DAYS)]
+
+
+def test_biorxiv_papers_in_the_library_are_matched_by_doi(fresh):
+    client.put("/feed/sources", json={"biorxiv": ["Neuroscience"]})
+    db.save(Paper(url="https://www.biorxiv.org/content/10.64898/2026.10.15.000001v1", title="Replay", authors=[]))
+    data = client.get("/feed").json()
+    assert data["papers"][0]["library_id"] and data["learning"]["positives"] == 1
+    assert not any("10.64898/2026.10.15.000001" in ids for ids in fresh["by_ids"])  # never looked up on arXiv
+    assert feed.biorxiv_doi("https://www.biorxiv.org/content/10.1101/123456v2.full.pdf") == "10.1101/123456"
 
 
 def test_summaries_are_written_once_from_your_papers(fresh, monkeypatch):
