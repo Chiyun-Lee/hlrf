@@ -25,9 +25,10 @@ app.add_middleware(CORSMiddleware, allow_origin_regex=r"chrome-extension://.*", 
 
 
 class SaveRequest(BaseModel):
-    """Sent by the extension. html/pdf are captured in the user's browser; without them the backend downloads the URL."""
+    """Sent by the extension, or by the library's "Add a paper" box. html/pdf are captured in the user's browser (or a
+    PDF uploaded from disk); without them the backend downloads the URL. An upload may come without a URL."""
 
-    url: str
+    url: str = ""
     meta: dict = {}
     html: str | None = None
     pdf: str | None = None  # base64
@@ -35,8 +36,13 @@ class SaveRequest(BaseModel):
 
 @app.post("/papers")
 def save_paper(req: SaveRequest) -> dict:
+    pdf = base64.b64decode(req.pdf) if req.pdf else None
+    if pdf is not None and not extract.is_pdf(pdf):
+        raise HTTPException(400, "That file isn't a PDF.")
+    if not pdf and not req.url.strip():
+        raise HTTPException(400, "Paste a link or choose a PDF.")
     try:
-        paper, pdf = extract.extract(req.url, req.meta, req.html, base64.b64decode(req.pdf) if req.pdf else None)
+        paper, pdf = extract.extract(req.url.strip(), req.meta, req.html, pdf)
     except Exception as e:
         # Surface the cause in the extension popup rather than a bare 500.
         logging.exception("extraction failed for %s", req.url)
@@ -71,6 +77,9 @@ def get_paper(paper_id: int) -> dict:
         "has_pdf": db.has_pdf(paper_id),
         "abstract_levels": db.abstract_levels(paper_id),
         "card_levels": db.card_levels(paper_id),
+        # The paper's arXiv id, normalised as For you stores it, so the reader can add it to "Your papers".
+        "feed_id": (feed_id := feed.arxiv_id(paper.url, paper.arxiv_id)),
+        "in_your_papers": feed.is_mine(feed_id),
     }
 
 

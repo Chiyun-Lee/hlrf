@@ -1,3 +1,4 @@
+import base64
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -167,6 +168,38 @@ def test_saving_a_paper_still_works(monkeypatch):
     monkeypatch.setattr(extract, "extract", lambda *a, **k: (paper, None))
     response = client.post("/papers", json={"url": paper.url})
     assert response.status_code == 200 and response.json()["title"] == "T"
+
+
+def test_uploading_a_pdf(monkeypatch):
+    """The library's "Add a paper" box: a PDF with or without a link; nothing, or a non-PDF, is refused up front."""
+    seen = {}
+
+    def fake_extract(url, meta, html, pdf):
+        seen.update(url=url, pdf=pdf)
+        return Paper(url=url, title="Uploaded", authors=[]), pdf
+
+    monkeypatch.setattr(extract, "extract", fake_extract)
+    pdf = base64.b64encode(b"%PDF-1.5 fake").decode()
+    assert client.post("/papers", json={"pdf": pdf}).status_code == 200
+    assert seen == {"url": "", "pdf": b"%PDF-1.5 fake"}
+    assert client.post("/papers", json={"url": " https://x.org/p ", "pdf": pdf}).status_code == 200
+    assert seen["url"] == "https://x.org/p"
+    not_pdf = client.post("/papers", json={"pdf": base64.b64encode(b"<html>").decode()})
+    assert not_pdf.status_code == 400 and "isn't a PDF" in not_pdf.json()["detail"]
+    assert client.post("/papers", json={"url": "  "}).status_code == 400
+
+
+def test_reader_knows_if_a_paper_is_one_of_yours():
+    paper_id = db.save(Paper(url=f"https://arxiv.org/abs/{MINE[0].id}v2", title="T", authors=[]))
+    assert client.get(f"/papers/{paper_id}").json()["feed_id"] == MINE[0].id
+    assert not client.get(f"/papers/{paper_id}").json()["in_your_papers"]
+    assert client.post("/feed/mine", json={"text": MINE[0].id}).status_code == 200
+    assert client.get(f"/papers/{paper_id}").json()["in_your_papers"]
+    client.delete(f"/feed/mine/{MINE[0].id}")
+    assert not client.get(f"/papers/{paper_id}").json()["in_your_papers"]
+    other = db.save(Paper(url="https://doi.org/10.1/x", title="Not on arXiv", authors=[]))
+    record = client.get(f"/papers/{other}").json()
+    assert record["feed_id"] is None and record["in_your_papers"] is False
 
 
 # --- Your papers from a profile ---

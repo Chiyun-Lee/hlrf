@@ -57,11 +57,10 @@ route();
 
 async function library() {
   const papers = await api("/papers");
-  if (!papers.length) {
-    app.innerHTML = `<p class="empty">No papers yet!<br>Open one in Chrome and hit <b>Save this paper</b> in the extension.</p>`;
-    return;
-  }
-  app.innerHTML = `<h1 class="hand">Your papers</h1><input type="search" placeholder="Filter by title or author" id="q" /><div id="list"></div>`;
+  app.innerHTML = `<h1 class="hand">Your papers</h1>${addPaperForm()}
+    ${papers.length ? `<input type="search" placeholder="Filter by title or author" id="q" /><div id="list"></div>` : `<p class="empty">No papers yet! Add one above, or hit <b>Save this paper</b> in the Chrome extension.</p>`}`;
+  wireAddPaper(app.querySelector(".add-paper"));
+  if (!papers.length) return;
   const list = app.querySelector("#list");
   const render = (q = "") => {
     q = q.toLowerCase();
@@ -85,6 +84,65 @@ async function library() {
   render();
 }
 
+// "Add a paper" on the library page: paste a link, or upload a PDF (pick it or drop it on the box), or both: a link
+// with a PDF you downloaded keeps the paper's real address while reading your copy (for sites that block downloads).
+const MAX_PDF_MB = 60;
+
+function addPaperForm() {
+  return `<form class="add-paper">
+    <div class="add-row">
+      <input name="url" type="text" placeholder="Paste a link: arXiv, DOI, journal or PMC page, or a PDF" aria-label="Paper link" autocomplete="off" />
+      <label class="btn add-file">Upload PDF<input name="pdf" type="file" accept="application/pdf,.pdf" hidden /></label>
+      <button class="btn primary" type="submit">Add paper</button>
+    </div>
+    <div class="add-hint muted small">…or drop a PDF here. Site blocking downloads? Download the PDF yourself, then paste its link and upload it together.</div>
+    <div class="add-status small" role="status"></div>
+  </form>`;
+}
+
+function wireAddPaper(form) {
+  const status = form.querySelector(".add-status");
+  const fileInput = form.querySelector('input[type="file"]');
+  let file = null;
+  const pick = (f) => {
+    if (!f) return;
+    if (!/\.pdf$/i.test(f.name) && f.type !== "application/pdf") return (status.textContent = `${f.name} isn't a PDF.`);
+    if (f.size > MAX_PDF_MB * 1e6) return (status.textContent = `${f.name} is over ${MAX_PDF_MB} MB.`);
+    file = f;
+    status.textContent = `Ready: ${f.name} (${(f.size / 1e6).toFixed(1)} MB). Add a link too if you have one, then Add paper.`;
+  };
+  fileInput.addEventListener("change", () => pick(fileInput.files[0]));
+  form.addEventListener("dragover", (e) => (e.preventDefault(), form.classList.add("dragging")));
+  form.addEventListener("dragleave", () => form.classList.remove("dragging"));
+  form.addEventListener("drop", (e) => (e.preventDefault(), form.classList.remove("dragging"), pick(e.dataTransfer.files[0])));
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const url = form.url.value.trim();
+    if (!url && !file) return (status.textContent = "Paste a link or choose a PDF first.");
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    status.textContent = "Reading the paper… (this can take a minute)";
+    try {
+      const body = { url, meta: {} };
+      if (file) body.pdf = await toBase64(file);
+      const saved = await api("/papers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      location.hash = `#/papers/${saved.id}`;
+    } catch (err) {
+      status.textContent = `Couldn't add it: ${err.message}`;
+      button.disabled = false;
+    }
+  });
+}
+
+function toBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(",")[1]); // drop the "data:application/pdf;base64," prefix
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 async function paper(id) {
   const p = await api(`/papers/${id}`);
   const groups = [...new Set(p.authors.map((a) => a.equal_contribution_group).filter((g) => g != null))];
@@ -104,7 +162,7 @@ async function paper(id) {
       <div class="muted small">${[p.year, p.venue].filter(Boolean).map(esc).join(" · ")}</div>
       ${p.contribution_notes ? `<div class="notes small muted">${esc(p.contribution_notes)}</div>` : ""}
       <div class="links small">
-        <a href="${esc(p.url)}" target="_blank">Original</a>
+        ${/^https?:/i.test(p.url) ? `<a href="${esc(p.url)}" target="_blank">Original</a>` : ""}
         ${p.doi ? `<a href="https://doi.org/${esc(p.doi)}" target="_blank">DOI ${esc(p.doi)}</a>` : ""}
         ${p.arxiv_id ? `<a href="https://arxiv.org/abs/${esc(p.arxiv_id)}" target="_blank">arXiv ${esc(p.arxiv_id)}</a>` : ""}
         <div class="levels" role="group" aria-label="Notes written for">
@@ -113,6 +171,7 @@ async function paper(id) {
         <button class="btn" id="toggle-notes">Show originals</button>
         <button class="btn" id="abstract"></button>
         <button class="btn primary" id="quiz">Quiz me ✦</button>
+        ${p.feed_id ? `<button class="btn" id="mine" title="Add to the papers For you ranks each day's arXiv listing by (For you → Your papers)"></button>` : ""}
         <button class="btn quiet" id="delete">Delete</button>
       </div>
     </section>
@@ -152,11 +211,36 @@ async function paper(id) {
     reloadNotes(doc);
   });
   quizButton.addEventListener("click", () => startQuiz(id));
+  const mineButton = app.querySelector("#mine");
+  if (mineButton) wireYourPapers(mineButton, p);
   app.querySelector("#delete").addEventListener("click", async () => {
     await deletePaper(id);
     location.hash = "#/";
   });
   await renderReader(doc, id, p);
+}
+
+// "+ Rank For you by this" on a paper's page: adds it to (or removes it from) For you's "Your papers", the papers
+// the daily arXiv ranking learns from (POST/DELETE /feed/mine).
+function wireYourPapers(button, p) {
+  const show = () => {
+    button.textContent = p.in_your_papers ? "✓ For you ranks by this" : "＋ Rank For you by this";
+    button.setAttribute("aria-pressed", p.in_your_papers);
+  };
+  show();
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      if (p.in_your_papers) await api(`/feed/mine/${p.feed_id}`, { method: "DELETE" });
+      else await api("/feed/mine", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: p.feed_id }) });
+      p.in_your_papers = !p.in_your_papers;
+      show();
+    } catch (e) {
+      button.textContent = `Couldn't update: ${e.message}`;
+    } finally {
+      button.disabled = false;
+    }
+  });
 }
 
 const FACT_KINDS = {
