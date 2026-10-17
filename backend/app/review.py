@@ -11,7 +11,8 @@ agent picks up neither the repo's CLAUDE.md nor its git:
 - pid: the runner's process id, written by the server
 - events.jsonl: one short line per thing the agent does, for the live view
 - runner.log: everything, for debugging
-- work/: the agent's working directory: paper.pdf, paper.txt, targets.json, then the agent's review.md and pins.json
+- work/: the agent's working directory: paper.pdf, paper.txt, pages/ (each page as an image), targets.json, then the
+  agent's review.md and pins.json
 """
 
 import asyncio
@@ -31,6 +32,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlparse
 
+import pymupdf
 from pydantic import BaseModel, ValidationError
 
 from . import llm  # first: with LLM_BACKEND=claude-code it takes the API key out of the environment, so Claude Code uses your login
@@ -53,6 +55,10 @@ MAX_RUNNING = 2
 TIME_LIMIT = {"full": 6 * 3600, "quick": 3600}  # seconds; a review still going after this is stopped
 FIXES = 2  # times the agent is sent back to fix pins.json
 HOUR_MS = str(3600 * 1000)
+# Default tools an unattended review mustn't use: they outlive it (cron, wake-ups), reach past this machine (remote
+# triggers, push notifications) or work on git outside the work dir (worktrees).
+OFF_LIMITS = ["CronCreate", "CronDelete", "CronList", "ScheduleWakeup", "RemoteTrigger", "PushNotification",
+              "EnterWorktree", "ExitWorktree", "DesignSync"]
 
 # Each kind of review's stages, with the minutes each usually takes (for the progress bar).
 STAGES = {
@@ -140,7 +146,7 @@ def update(paper_id: int, **changes) -> dict:
     """Change status.json, atomically (a temp file renamed over it), so a reader never sees half of it."""
     st = {**(read(paper_id) or {}), **changes}
     path = folder(paper_id) / "status.json"
-    tmp = path.with_name(f"status.{os.getpid()}.tmp")
+    tmp = path.with_name(f"status.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.write_text(json.dumps(st))
     os.replace(tmp, path)
     return st
@@ -391,9 +397,19 @@ def pages_text(paper: Paper) -> str:
     return "\n\n".join(f"=== Page {i} ===\n\n" + "\n\n".join(b.text for b in p.blocks) for i, p in enumerate(paper.pages, 1))
 
 
+def render_pages(pdf: bytes, out: Path) -> None:
+    """Each page as a PNG, so the agent can look at figures and equations (Claude Code's Read renders PDF pages only
+    where poppler is installed)."""
+    out.mkdir(exist_ok=True)
+    with pymupdf.open(stream=pdf, filetype="pdf") as doc:
+        for i, page in enumerate(doc, 1):
+            page.get_pixmap(dpi=120).save(out / f"page-{i:03}.png")
+
+
 def prepare(run: Run) -> None:
-    """Fill the work dir: the paper, its text page by page, the figures and tables to pin, and the skills. Files an
-    earlier review left (a cloned repository, environments) stay for the agent to reuse; its review and pins don't."""
+    """Fill the work dir: the paper, its text and its pages as images, the figures and tables to pin, and the skills.
+    Files an earlier review left (a cloned repository, environments) stay for the agent to reuse; its review and pins
+    don't."""
     paper, pdf = db.get(run.paper_id), db.get_pdf(run.paper_id)
     if not paper or not pdf:
         raise Failed("This paper or its PDF is no longer in the library.")
@@ -403,6 +419,11 @@ def prepare(run: Run) -> None:
         (run.work / name).unlink(missing_ok=True)
     (run.work / "paper.pdf").write_bytes(pdf)
     (run.work / "paper.txt").write_text(pages_text(paper), encoding="utf-8")
+    try:
+        render_pages(pdf, run.work / "pages")
+    except Exception as e:  # the text is enough to go on
+        log.exception("couldn't render the pages of paper %s", run.paper_id)
+        run.event("error", one_line(f"Couldn't render the pages as images: {e}"))
     (run.work / "targets.json").write_text(json.dumps([t.model_dump() for t in run.found], indent=1))
     skills = run.work / ".claude" / "skills"
     shutil.rmtree(skills, ignore_errors=True)  # removes the old links, not what they point to
@@ -413,7 +434,7 @@ def prepare(run: Run) -> None:
                 (skills / name).symlink_to(SKILLS[name], target_is_directory=True)
             except OSError:  # Windows without the right to make symlinks
                 shutil.copytree(SKILLS[name], skills / name)
-    run.event("text", f"Ready: paper.pdf, paper.txt and {len(run.found)} figures and tables to pin")
+    run.event("text", f"Ready: the paper's text, its {len(paper.pages)} pages as images, {len(run.found)} figures and tables to pin")
 
 
 async def run_review(paper_id: int, depth: str) -> None:
@@ -477,9 +498,10 @@ Rules (pass them on to every helper agent you start):
   shorten them, and say in the review what you shortened and how.
 - Be honest about what you did and didn't check: never present a claim as tested when you only read it.
 
-The work dir holds paper.pdf; paper.txt, its text page by page; and targets.json, the paper's figures and tables as
-found in this PDF (label, page, caption start, box in PDF points). An earlier, unfinished review of this paper may have
-left files here (a cloned repository, environments, paper2agent output): reuse what is sound rather than redoing it.
+The work dir holds paper.pdf; paper.txt, its text page by page; pages/page-001.png and on, each page as an image
+(Read them to see figures and equations); and targets.json, the paper's figures and tables as found in this PDF
+(label, page, caption start, box in PDF points). An earlier, unfinished review of this paper may have left files here
+(a cloned repository, environments, paper2agent output): reuse what is sound rather than redoing it.
 
 Call the `stage` tool at the start of each stage below, in order, with its number and a one-line note of what you are
 about to do.
@@ -503,8 +525,8 @@ STEPS = {
     "quick": """\
 This is a quick review: never run the authors' code, or analysis code of your own. Read the paper, the repository and
 the data sources; fetching and searching them (git clone, grep) is fine.
-1. Reading the paper: read paper.txt, and paper.pdf for the figures and equations; note the claims, data and methods
-   that matter.
+1. Reading the paper: read paper.txt, and the page images for the figures and equations; note the claims, data and
+   methods that matter.
 2. Checking the code and data: find the authors' code (links in the paper, its arXiv page, GitHub) and the data
    sources, and read them. Do the settings, priors, cuts and data versions match the paper? Is anything missing?
 3. Writing the review: write review.md (below), saying plainly that nothing was re-run.
@@ -584,6 +606,7 @@ def options(run: Run, resume: str | None = None, **extra):
     return ClaudeAgentOptions(
         system_prompt={"type": "preset", "preset": "claude_code", "append": brief(run.depth)},
         tools={"type": "preset", "preset": "claude_code"},
+        disallowed_tools=OFF_LIMITS,
         skills=skills_for(run.depth),
         setting_sources=["project"],  # only the work dir's .claude/ (our skills): none of your own settings or skills
         mcp_servers={"review": create_sdk_mcp_server("review", tools=review_tools(run))},
@@ -614,9 +637,11 @@ def options(run: Run, resume: str | None = None, **extra):
 
 
 def check_init(run: Run, init: dict) -> None:
-    """Stop at once, not hours later, if Claude Code didn't find our skills (a broken link, say)."""
+    """Stop at once, not hours later, if Claude Code didn't find our skills (a broken link, say) or tools."""
     if missing := [s for s in skills_for(run.depth) if s not in init.get("skills", [])]:
         raise Failed(f"Claude Code didn't find the {' and '.join(missing)} skill in {run.work / '.claude' / 'skills'}.")
+    if "mcp__review__stage" not in init.get("tools", []):
+        raise Failed("Claude Code didn't load the review's stage and check_pins tools.")
 
 
 async def converse(run: Run, prompt: str, resume: str | None = None, **extra):
@@ -626,9 +651,10 @@ async def converse(run: Run, prompt: str, resume: str | None = None, **extra):
     result = None
     try:
         async for message in query(prompt=prompt, options=options(run, resume, **extra)):
-            log.info("%r", message)
             if isinstance(message, SystemMessage) and message.subtype == "init":
                 check_init(run, message.data)
+            if not (isinstance(message, SystemMessage) and message.subtype == "thinking_tokens"):  # one a second
+                log.info("%r", message)
             sub = getattr(message, "parent_tool_use_id", None) is not None
             for kind, text in describe(message, run.work):
                 run.event(kind, text, sub)
@@ -642,6 +668,11 @@ async def converse(run: Run, prompt: str, resume: str | None = None, **extra):
     return result
 
 
+def outcome(result) -> str:
+    """What went wrong, from Claude Code's last result."""
+    return "no result" if result is None else "; ".join(result.errors or []) or result.result or result.subtype
+
+
 async def agent(run: Run) -> PaperPins:
     """Run the review, then send the agent back to fix pins.json while check_pins finds problems (FIXES times)."""
     prompt, session = task(run), None
@@ -651,13 +682,11 @@ async def agent(run: Run) -> PaperPins:
         if not problems:
             return found
         if result is None or result.is_error:
-            detail = (result.errors and "; ".join(result.errors)) or result.result or result.subtype if result else "no result"
-            raise Failed(f"Claude Code stopped: {detail}")
-        if fix == FIXES:
-            raise Failed(f"pins.json still has problems after {FIXES} fixes: " + "; ".join(problems[:3]))
-        run.event("error", f"pins.json has {len(problems)} problem(s): sending the agent back to fix them")
-        prompt, session = fix_prompt(problems), result.session_id
-    raise AssertionError  # unreachable
+            raise Failed(f"Claude Code stopped: {outcome(result)}")
+        if fix < FIXES:
+            run.event("error", f"pins.json has {len(problems)} problem(s): sending the agent back to fix them")
+            prompt, session = fix_prompt(problems), result.session_id
+    raise Failed(f"pins.json still has problems after {FIXES} fixes: " + "; ".join(problems[:3]))
 
 
 # --- the live view: one short line per message ---
@@ -721,7 +750,8 @@ def duration(seconds: float) -> str:
 
 def describe(message, work: Path) -> list[tuple[str, str]]:
     """The live view's lines for one message from Claude Code, as (kind, text). Tool results only when they failed."""
-    from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolResultBlock, ToolUseBlock, UserMessage
+    from claude_agent_sdk import (AssistantMessage, RateLimitEvent, ResultMessage, TaskNotificationMessage, TextBlock,
+                                  ToolResultBlock, ToolUseBlock, UserMessage)
 
     lines = []
     if isinstance(message, AssistantMessage):
@@ -737,6 +767,12 @@ def describe(message, work: Path) -> list[tuple[str, str]]:
         if llm.BACKEND != "claude-code" and message.total_cost_usd:  # on the subscription the cost isn't billed
             text += f", ${message.total_cost_usd:.2f}"
         lines.append(("done", text))
+    elif isinstance(message, TaskNotificationMessage):  # a helper working in the background is done
+        lines.append(("text", one_line(f"Helper {message.status}: {message.summary}")))
+    elif isinstance(message, RateLimitEvent) and (limit := message.rate_limit_info).status != "allowed":
+        resets = f" (resets at {datetime.fromtimestamp(limit.resets_at):%H:%M})" if limit.resets_at else ""
+        lines.append(("error", f"Claude usage limit reached{resets}") if limit.status == "rejected"
+                     else ("text", f"Close to the Claude usage limit{resets}"))
     return lines
 
 

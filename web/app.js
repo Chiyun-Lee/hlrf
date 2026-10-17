@@ -46,16 +46,16 @@ async function library() {
     <div id="list"></div>`;
   const list = app.querySelector("#list");
   const search = app.querySelector("#q");
-  const only = app.querySelector("#reviewed"); // show only the papers an agent has reviewed (they have pins)
+  const reviewedToggle = app.querySelector("#reviewed"); // show only the papers an agent has reviewed (they have pins)
   const reviews = {}; // agent reviews by paper id (GET /reviews, review.js): the list shows without them
   const reviewed = (p) => p.reviewed || reviews[p.id]?.state === "done";
   try {
-    only.setAttribute("aria-pressed", localStorage.getItem("onlyReviewed") === "1");
+    reviewedToggle.setAttribute("aria-pressed", localStorage.getItem("onlyReviewed") === "1");
   } catch {} // storage blocked: start with every paper
   const render = () => {
     const q = search.value.toLowerCase();
-    const onlyReviewed = only.getAttribute("aria-pressed") === "true";
-    only.textContent = `AI reviewed · ${papers.filter(reviewed).length}`;
+    const onlyReviewed = reviewedToggle.getAttribute("aria-pressed") === "true";
+    reviewedToggle.textContent = `AI reviewed · ${papers.filter(reviewed).length}`;
     const shown = papers.filter((p) => (p.title + p.authors.join(" ")).toLowerCase().includes(q) && (!onlyReviewed || reviewed(p)));
     list.innerHTML = shown
       .map(
@@ -69,9 +69,9 @@ async function library() {
     if (!shown.length && onlyReviewed && !q) list.innerHTML = `<p class="muted">No papers reviewed yet. Open one and click <b>Run paper2agent review</b>.</p>`;
   };
   search.addEventListener("input", render);
-  only.addEventListener("click", () => {
-    const on = only.getAttribute("aria-pressed") !== "true";
-    only.setAttribute("aria-pressed", on);
+  reviewedToggle.addEventListener("click", () => {
+    const on = reviewedToggle.getAttribute("aria-pressed") !== "true";
+    reviewedToggle.setAttribute("aria-pressed", on);
     try {
       localStorage.setItem("onlyReviewed", on ? "1" : "");
     } catch {}
@@ -119,12 +119,20 @@ async function paper(id) {
     </section>
     <article class="doc" id="doc"></article>`;
   const doc = app.querySelector("#doc");
+  // Show originals switches every note off (and keeps notes written later off), leaving the paper as printed with any
+  // agent-review pins on it; the choice holds from paper to paper.
   const toggle = app.querySelector("#toggle-notes");
-  toggle.addEventListener("click", () => {
-    const on = toggle.textContent === "Show notes";
+  const showNotes = (on) => {
     setAllNotes(doc, on);
     toggle.textContent = on ? "Show originals" : "Show notes";
+    toggle.setAttribute("aria-pressed", String(!on));
+  };
+  toggle.addEventListener("click", () => {
+    const on = doc.classList.contains("originals");
+    showNotes(on);
+    remember("originals", !on);
   });
+  if (recall("originals")) showNotes(false);
   const abstractButton = app.querySelector("#abstract");
   const quizButton = app.querySelector("#quiz");
   abstractButton.addEventListener("click", () =>
@@ -161,6 +169,21 @@ async function api(path, options) {
     throw Object.assign(new Error(message ?? `${res.status} ${res.statusText}`), { status: res.status, detail });
   }
   return res.status === 204 ? null : res.json();
+}
+
+// A choice kept in this browser (localStorage can be blocked: then it lasts until the page is left).
+function remember(key, on) {
+  try {
+    localStorage.setItem(key, on ? "1" : "");
+  } catch {}
+}
+
+function recall(key) {
+  try {
+    return localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
 }
 
 function shortAuthors(names) {

@@ -96,8 +96,8 @@ input[type="search"] { width: 100%; box-sizing: border-box; padding: 10px 12px; 
 .toggle-notes { font: inherit; font-size: 13px; padding: 2px 10px; border: 1px solid var(--ink); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; }
 
 /* Methods pins (pins.js): labelled buttons from an agent review on figures and tables. Data provenance first, then
-   concerns in the warm --warn, then methods (quieter). In a rail beside the page on wide screens, else one line per
-   pin in the figure's top-right corner; hovering one outlines its figure; a click opens a two-level card. */
+   concerns in the warm --warn, then methods (quieter). In a rail beside the page, else one line per pin in the
+   figure's top-right corner; hovering one outlines its figure; a click opens a two-level card. */
 .pins { position: absolute; z-index: 4; display: flex; flex-direction: column; gap: 4px; font: 12px/1.3 system-ui, -apple-system, sans-serif; } /* above every note (an edited one reaches z-index 3) */
 .pins-label { margin: 0 0 2px 1px; color: var(--muted); }
 .pin { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; box-sizing: border-box; padding: 5px 9px 6px;
@@ -115,13 +115,16 @@ input[type="search"] { width: 100%; box-sizing: border-box; padding: 10px 12px; 
 .pin.concern:is(:hover, [aria-expanded="true"]) { border-color: var(--warn); background: #fbf4ec; }
 .pin:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* No room for a rail: one line per pin, inside the figure's top-right corner; short names and finger-sized on phones */
+/* A narrow margin or page: short kind names ("Concern"); the card gives the full one */
+.pins.short .pin-name { display: none; }
+.pins.short .pin-short { display: inline; }
+.pins.short .pin-title { font-size: 12px; }
+
+/* No room for a rail: one line per pin, inside the figure's top-right corner; finger-sized on phones */
 .pins.corner { align-items: flex-end; }
 .pins.corner :is(.pins-label, .pin-title) { display: none; }
 .pins.corner .pin { width: auto; padding: 4px 8px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); }
-.pins.tight .pin-name { display: none; }
-.pins.tight .pin-short { display: inline; }
-.pins.tight .pin { min-height: 32px; justify-content: center; }
+.pins.corner.short .pin { min-height: 32px; justify-content: center; }
 
 /* The figure or table a pin belongs to, outlined while its group is in use */
 .pin-target { position: absolute; z-index: 4; pointer-events: none; border-radius: 3px; outline: 2px solid transparent; outline-offset: 3px; transition: outline-color 0.15s; }
@@ -135,6 +138,7 @@ input[type="search"] { width: 100%; box-sizing: border-box; padding: 10px 12px; 
 .pin-card.concern .pin-card-kind { color: var(--warn); }
 .pin-evidence { padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; white-space: nowrap; }
 .pin-card h3 { margin: 6px 0 4px; font-size: 15px; line-height: 1.3; }
+.pin-card-label { font-size: 13px; font-weight: 400; color: var(--muted); white-space: nowrap; }
 .pin-basic { margin: 0; font: 18px/1.25 "xkcd", "Comic Sans MS", cursive; color: var(--ink); }
 .pin-level { margin: 10px 0 3px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 12px; font-weight: 600; color: var(--muted); }
 .pin-researcher { margin: 0; }
@@ -144,6 +148,8 @@ input[type="search"] { width: 100%; box-sizing: border-box; padding: 10px 12px; 
 .pins-summary { margin-top: 16px; font-size: 14px; line-height: 1.5; }
 .pins-summary p { margin: 0; max-width: 72ch; }
 .pins-counts { color: var(--ink); }
+.pins-toggle { margin-left: 8px; }
+.pins-hidden :is(.pins, .pin-target, .pin-card) { display: none; } /* Hide pins: the paper as printed (pins.js) */
 .pins-summary .pins-verdict { margin-top: 4px; padding-left: 10px; border-left: 2px solid var(--ink); }
 @media (prefers-reduced-motion: reduce) { .pin, .pin-target { transition: none; } }
 
@@ -323,6 +329,10 @@ input[type="search"] { width: 100%; box-sizing: border-box; padding: 10px 12px; 
 .textLayer ::selection { background: rgba(31, 47, 122, 0.25); }
 .note.off { pointer-events: none; } /* let the original underneath be selected... */
 .note.off .switch { pointer-events: auto; } /* ...but keep the switch clickable */
+/* Show originals (the whole paper as printed): no outlines, and each note's switch stays faint until you reach for it */
+.originals .note.off { outline: none; }
+.originals .note.off .switch { opacity: 0.2; }
+.originals .note.off .switch:is(:hover, :focus-visible) { opacity: 1; }
 .note.asking { box-shadow: 0 0 0 2px var(--ink); }
 
 /* Editing a note in place */
@@ -460,8 +470,8 @@ body.chat-open .review-dock { right: 396px; }
   box-sizing: border-box; background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 28px rgba(31, 47, 122, 0.16); }
 body.chat-open .review-panel { max-width: calc(100vw - 412px); }
 .review-panel:focus { outline: none; }
-.review-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 8px 0 14px; }
-.review-head h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.review-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 0 14px; }
+.review-head h2 { flex: 1; margin: 0; font-size: 14px; font-weight: 600; }
 .review-fold { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--muted);
   font: 18px/1 system-ui, -apple-system, sans-serif; cursor: pointer; }
 .review-fold:hover { background: #f1f0ec; color: var(--text); }
@@ -471,8 +481,7 @@ body.chat-open .review-panel { max-width: calc(100vw - 412px); }
 @keyframes review-wait { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 .review-dock.failed .review-bar > div { background: var(--warn); }
 .review-dock.stopped .review-bar > div { background: #b9bdcc; }
-.review-now { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 8px 14px 0; }
-.review-now .review-headline { font-weight: 600; }
+.review-panel .review-headline { margin: 8px 14px 0; font-weight: 600; }
 .review-clock { color: var(--muted); font-variant-numeric: tabular-nums; }
 .review-result { margin: 4px 14px 0; }
 .review-result:empty { display: none; }
@@ -494,6 +503,7 @@ body.chat-open .review-panel { max-width: calc(100vw - 412px); }
 /* The live feed of what the agent does, newest at the bottom */
 .review-log { position: relative; display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--border); }
 .review-log:has(.review-feed:empty) { display: none; }
+.review-dock.done .review-log { margin-top: 10px; } /* no stages above it then */
 .review-feed { min-height: 0; max-height: 220px; overflow-y: auto; overscroll-behavior: contain; margin: 0; padding: 6px 14px 8px;
   list-style: none; font-size: 12px; line-height: 1.4; }
 .ev { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; padding: 2px 0; }
