@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlparse
 
+import pymupdf
 from pydantic import BaseModel, ValidationError
 
 from . import llm  # first: with LLM_BACKEND=claude-code it takes the API key out of the environment, so Claude Code uses your login
@@ -391,9 +392,19 @@ def pages_text(paper: Paper) -> str:
     return "\n\n".join(f"=== Page {i} ===\n\n" + "\n\n".join(b.text for b in p.blocks) for i, p in enumerate(paper.pages, 1))
 
 
+def render_pages(pdf: bytes, folder: Path) -> None:
+    """Each page as a PNG, so the agent can look at figures and equations (Claude Code's Read renders PDF pages only
+    where poppler is installed)."""
+    folder.mkdir(exist_ok=True)
+    with pymupdf.open(stream=pdf, filetype="pdf") as doc:
+        for i, page in enumerate(doc, 1):
+            page.get_pixmap(dpi=120).save(folder / f"page-{i:03}.png")
+
+
 def prepare(run: Run) -> None:
-    """Fill the work dir: the paper, its text page by page, the figures and tables to pin, and the skills. Files an
-    earlier review left (a cloned repository, environments) stay for the agent to reuse; its review and pins don't."""
+    """Fill the work dir: the paper, its text and its pages as images, the figures and tables to pin, and the skills.
+    Files an earlier review left (a cloned repository, environments) stay for the agent to reuse; its review and pins
+    don't."""
     paper, pdf = db.get(run.paper_id), db.get_pdf(run.paper_id)
     if not paper or not pdf:
         raise Failed("This paper or its PDF is no longer in the library.")
@@ -403,6 +414,11 @@ def prepare(run: Run) -> None:
         (run.work / name).unlink(missing_ok=True)
     (run.work / "paper.pdf").write_bytes(pdf)
     (run.work / "paper.txt").write_text(pages_text(paper), encoding="utf-8")
+    try:
+        render_pages(pdf, run.work / "pages")
+    except Exception as e:  # the text is enough to go on
+        log.exception("couldn't render the pages of paper %s", run.paper_id)
+        run.event("error", one_line(f"Couldn't render the pages as images: {e}"))
     (run.work / "targets.json").write_text(json.dumps([t.model_dump() for t in run.found], indent=1))
     skills = run.work / ".claude" / "skills"
     shutil.rmtree(skills, ignore_errors=True)  # removes the old links, not what they point to
@@ -477,8 +493,9 @@ Rules (pass them on to every helper agent you start):
   shorten them, and say in the review what you shortened and how.
 - Be honest about what you did and didn't check: never present a claim as tested when you only read it.
 
-The work dir holds paper.pdf; paper.txt, its text page by page; and targets.json, the paper's figures and tables as
-found in this PDF (label, page, caption start, box in PDF points). An earlier, unfinished review of this paper may have
+The work dir holds paper.pdf; paper.txt, its text page by page; pages/page-001.png and on, each page as an image
+(Read them to see figures and equations); and targets.json, the paper's figures and tables as found in this PDF
+(label, page, caption start, box in PDF points). An earlier, unfinished review of this paper may have
 left files here (a cloned repository, environments, paper2agent output): reuse what is sound rather than redoing it.
 
 Call the `stage` tool at the start of each stage below, in order, with its number and a one-line note of what you are
@@ -503,8 +520,8 @@ STEPS = {
     "quick": """\
 This is a quick review: never run the authors' code, or analysis code of your own. Read the paper, the repository and
 the data sources; fetching and searching them (git clone, grep) is fine.
-1. Reading the paper: read paper.txt, and paper.pdf for the figures and equations; note the claims, data and methods
-   that matter.
+1. Reading the paper: read paper.txt, and the page images for the figures and equations; note the claims, data and
+   methods that matter.
 2. Checking the code and data: find the authors' code (links in the paper, its arXiv page, GitHub) and the data
    sources, and read them. Do the settings, priors, cuts and data versions match the paper? Is anything missing?
 3. Writing the review: write review.md (below), saying plainly that nothing was re-run.

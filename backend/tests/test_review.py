@@ -10,6 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import pymupdf
 from fastapi.testclient import TestClient
 
 from app import db, llm, pins, review
@@ -24,9 +25,12 @@ posix_only = pytest.mark.skipif(os.name == "nt", reason="checks processes with p
 
 
 def paper(url="https://arxiv.org/abs/2401.00001") -> int:
-    """A saved paper with a PDF and one figure."""
+    """A saved paper with a one-page PDF and one figure."""
     pages = [{"blocks": [{"text": "Figure 1. A plot.", "bbox": [50, 210, 300, 230]}], "width": 612, "height": 792}]
-    return db.save(Paper(url=url, title="A paper", authors=[{"raw": "Ada Lovelace"}], pages=pages), b"%PDF-1.4 stand-in")
+    with pymupdf.open() as doc:
+        doc.new_page().insert_text((50, 220), "Figure 1. A plot.")
+        pdf = doc.tobytes()
+    return db.save(Paper(url=url, title="A paper", authors=[{"raw": "Ada Lovelace"}], pages=pages), pdf)
 
 
 def stand_in_problems(found, paper, targets=None) -> list[str]:
@@ -307,6 +311,7 @@ def test_stage_and_check_pins_tools(reviews):
     assert asyncio.run(check_pins.handler({}))["content"][0]["text"] == "ok"
     assert json.loads((run.work / "targets.json").read_text()) == [FIGURE.model_dump()]
     assert (run.work / "paper.txt").read_text().startswith("=== Page 1 ===\n\nFigure 1. A plot.")
+    assert [p.name for p in (run.work / "pages").iterdir()] == ["page-001.png"]
 
 
 def agent_run(reviews, monkeypatch, tmp_path, write_pins, init_skills=("paper-pins",), init_tools=("mcp__review__stage",)):
