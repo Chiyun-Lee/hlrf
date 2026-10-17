@@ -1,38 +1,46 @@
+from datetime import datetime, timedelta, timezone
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app import db, extract, feed
+from app import arxiv, db, extract, feed, llm
 from app.main import app
-from app.schemas import Paper
+from app.schemas import Paper, Pitch, Pitches
+from helpers import COSMOLOGY, FRIDAY, QUBITS, THURSDAY, arxiv_paper
 
 client = TestClient(app)
 
-FEED = {
-    "day": "2026-10-16",
-    "method": "model",
-    "papers": [
-        {"id": "2610.00001", "title": "Saved already", "abs_url": "https://arxiv.org/abs/2610.00001"},
-        {"id": "2610.00002", "title": "Not yet", "abs_url": "https://arxiv.org/abs/2610.00002"},
-    ],
-}
+# Friday's listing: one cosmology paper and one off-topic one among the qubit papers; Thursday's: five more.
+LISTING = [
+    arxiv_paper("2610.30001", "Galaxy clustering bispectrum analysis with the effective field theory"),
+    arxiv_paper("2610.30002", "Transmon qubit error correction with superconducting couplers"),
+    *[arxiv_paper(f"2610.4000{i}", t, day=THURSDAY) for i, t in enumerate(QUBITS + ["Dark sirens"])],
+    arxiv_paper("2610.50001", "Off-category paper", category="cond-mat.str-el"),
+]
+MINE = [arxiv_paper(f"2207.0150{i}", t, day=THURSDAY - timedelta(days=900)) for i, t in enumerate(COSMOLOGY)]
 
 
-@pytest.fixture
-def arxiv_feed(monkeypatch):
-    """A stand-in arxiv-feed server; returns the requests it received."""
-    monkeypatch.setenv("ARXIV_FEED_URL", "http://feed.test/")
-    monkeypatch.setenv("ARXIV_FEED_TOKEN", "secret")
-    seen = []
+@pytest.fixture(autouse=True)
+def fresh(monkeypatch):
+    """An empty For you, with arXiv replaced by LISTING (recent) and MINE (by id)."""
+    with db.lock, db.conn:
+        for table in ("papers", "pitches", "arxiv_papers", "feed_signals", "feed_meta"):
+            db.conn.execute(f"DELETE FROM {table}")
+    monkeypatch.setattr(feed, "corpus", None)
+    calls = {"recent": 0, "by_ids": []}
 
-    def fake(method, url, headers=None, **kwargs):
-        seen.append((method, url, headers, kwargs))
-        if url.endswith("/api/feed"):
-            return httpx.Response(200, json=FEED)
-        return httpx.Response(200, json={"feedback": kwargs["json"]["kind"], "learning": {}})
+    def recent(categories, days):
+        calls["recent"] += 1
+        return LISTING
 
-    monkeypatch.setattr(feed.httpx, "request", fake)
-    return seen
+    def by_ids(ids):
+        calls["by_ids"].append(ids)
+        return [p for p in MINE if p.id in ids]
+
+    monkeypatch.setattr(arxiv, "recent", recent)
+    monkeypatch.setattr(arxiv, "by_ids", by_ids)
+    return calls
 
 
 @pytest.mark.parametrize(
@@ -43,104 +51,117 @@ def arxiv_feed(monkeypatch):
         ("http://arxiv.org/abs/hep-th/0101001v1", None, "hep-th/0101001"),
         ("https://doi.org/10.1000/x", "arXiv:2410.01234v3", "2410.01234"),
         ("https://doi.org/10.1000/x", "not an id", None),
-        ("https://example.com/paper.pdf", None, None),
     ],
 )
 def test_arxiv_id(url, claimed, expected):
     assert feed.arxiv_id(url, claimed) == expected
 
 
-def test_feed_marks_papers_already_in_the_library(arxiv_feed):
-    saved = db.save(Paper(url="https://arxiv.org/abs/2610.00001v1", title="Saved already", authors=[]))
-    data = client.get("/feed?date=2026-10-16").json()
-    assert [p["library_id"] for p in data["papers"]] == [saved, None]
-    method, url, headers, kwargs = arxiv_feed[0]
-    assert (method, url, kwargs["params"]) == ("GET", "http://feed.test/api/feed", {"date": "2026-10-16"})
-    assert headers == {"Authorization": "Bearer secret"}
+def test_ids_in_pasted_text():
+    text = "2207.01501, https://arxiv.org/abs/2502.01722v2\nhep-th/0101001 and 2207.01501 again; not 12207.015011"
+    assert feed.ids_in(text) == ["2207.01501", "2502.01722", "hep-th/0101001"]
 
 
-def test_feed_explains_what_is_missing(monkeypatch):
-    monkeypatch.delenv("ARXIV_FEED_URL", raising=False)
+def test_latest_listing_newest_first_until_you_add_your_papers(fresh):
+    data = client.get("/feed").json()
+    assert (data["day"], data["older"], data["newer"]) == ("2026-10-16", "2026-10-15", None)
+    assert data["method"] == "newest" and data["learning"] == {"positives": 0, "needed": 3}
+    assert {p["id"] for p in data["papers"]} == {"2610.30001", "2610.30002"}  # not the off-category paper
+    assert data["progress"] == {"goal": 2, "sorted": 0, "streak": 0}  # only two papers that day
+    client.get("/feed?day=2026-10-15")
+    assert fresh["recent"] == 1  # fetched once, then at most hourly
+
+
+def test_your_papers_rank_the_list(fresh):
+    response = client.post("/feed/mine", json={"text": "2207.01500 2207.01501, arxiv.org/abs/2207.01502v1 9999.99999"})
+    assert response.json() == {"added": ["2207.01500", "2207.01501", "2207.01502"], "unknown": ["9999.99999"]}
+    data = client.get("/feed").json()
+    assert data["method"] == "model"
+    assert [p["id"] for p in data["papers"]] == ["2610.30001", "2610.30002"]
+    assert data["papers"][0]["score"] > data["papers"][1]["score"] and data["papers"][0]["reasons"]["topics"]
+    assert [p["id"] for p in data["mine"]] == ["2207.01502", "2207.01501", "2207.01500"]
+    assert data["older"] == "2026-10-15"  # your old papers don't add listing days
+
+    client.delete("/feed/mine/2207.01502")
+    assert client.get("/feed").json()["method"] == "newest"
+    client.post("/feed/mine", json={"text": "9999.99999"})
+    assert sum("9999.99999" in ids for ids in fresh["by_ids"]) == 1  # remembered as unknown, not asked again
+
+
+def test_pasting_no_ids_explains(fresh):
+    response = client.post("/feed/mine", json={"text": "my thesis"})
+    assert response.status_code == 400 and "arXiv ids" in response.json()["detail"]["message"]
+
+
+def test_library_papers_count_as_liked(fresh):
+    db.save(Paper(url="https://journal.example/x", title="Saved", authors=[], arxiv_id="arXiv:2207.01501v2"))
+    data = client.get("/feed").json()
+    assert data["learning"]["positives"] == 1
+    assert ["2207.01501"] in fresh["by_ids"]  # fetched so the ranking can read it
+    db.save(Paper(url="https://arxiv.org/abs/2610.30001", title="From For you", authors=[]))
+    assert {p["id"]: p["library_id"] for p in client.get("/feed").json()["papers"]}["2610.30001"]
+
+
+def test_feedback_goal_and_streak(fresh):
+    client.get("/feed")
+
+    def sort(paper_id, kind="up"):
+        return client.post(f"/feed/{paper_id}/feedback", json={"kind": kind}).json()
+
+    for i in range(4):
+        sort(f"2610.4000{i}", "down" if i % 2 else "up")
+    assert sort("2610.40004")["progress"] == {"goal": 5, "sorted": 5, "streak": 1}  # Thursday done, Friday open
+    assert sort("2610.30001")["feedback"] == "up"
+    assert sort("2610.30001")["feedback"] == "up"  # setting, not toggling: repeats change nothing
+    assert sort("2610.30002", "down")["progress"] == {"goal": 2, "sorted": 2, "streak": 2}
+    assert sort("2610.30002", "click")["feedback"] == "down"
+    assert sort("2610.40000", "none")["progress"]["streak"] == 1  # Thursday undone breaks the chain behind Friday
+    assert client.post("/feed/2610.30001/feedback", json={"kind": "maybe"}).status_code == 422
+
+
+def test_arxiv_down(fresh, monkeypatch):
+    def down(*a, **k):
+        raise httpx.ConnectError("refused")
+
+    monkeypatch.setattr(arxiv, "recent", down)
     response = client.get("/feed")
-    assert response.status_code == 503 and response.json()["detail"]["reason"] == "not_configured"
+    assert response.status_code == 503 and response.json()["detail"]["reason"] == "unreachable"
 
-    monkeypatch.setenv("ARXIV_FEED_URL", "http://feed.test")
-    monkeypatch.setenv("ARXIV_FEED_TOKEN", "wrong")
-    monkeypatch.setattr(feed.httpx, "request", lambda *a, **k: httpx.Response(401, json={"error": "no"}))
-    assert client.get("/feed").json()["detail"]["reason"] == "rejected"
-
-    def down(*a, **k):
-        raise httpx.ConnectError("refused")
-
-    monkeypatch.setattr(feed.httpx, "request", down)
-    detail = client.get("/feed").json()["detail"]
-    assert detail["reason"] == "unreachable" and "http://feed.test" in detail["message"]
-
-
-def test_feedback_is_passed_on(arxiv_feed):
-    assert client.post("/feed/2610.00002/feedback", json={"kind": "up"}).json()["feedback"] == "up"
-    assert arxiv_feed[-1][1] == "http://feed.test/api/papers/2610.00002/feedback"
-    assert client.post("/feed/2610.00002/feedback", json={"kind": "maybe"}).status_code == 422
-
-
-def test_saving_an_arxiv_paper_marks_it_relevant(arxiv_feed, monkeypatch):
-    paper = Paper(url="https://arxiv.org/abs/2610.00002", title="Not yet", authors=[])
-    monkeypatch.setattr(extract, "extract", lambda *a, **k: (paper, None))
-    assert client.post("/papers", json={"url": paper.url}).status_code == 200
-    assert arxiv_feed[-1][1].endswith("/api/papers/2610.00002/feedback") and arxiv_feed[-1][3]["json"] == {"kind": "up"}
-
-
-def test_saving_still_works_when_arxiv_feed_is_down(monkeypatch):
-    monkeypatch.setenv("ARXIV_FEED_URL", "http://feed.test")
-    monkeypatch.setenv("ARXIV_FEED_TOKEN", "secret")
-
-    def down(*a, **k):
-        raise httpx.ConnectError("refused")
-
-    monkeypatch.setattr(feed.httpx, "request", down)
-    paper = Paper(url="https://arxiv.org/abs/2610.00003", title="T", authors=[])
-    monkeypatch.setattr(extract, "extract", lambda *a, **k: (paper, None))
-    response = client.post("/papers", json={"url": paper.url})
-    assert response.status_code == 200 and response.json()["title"] == "T"
-
-
-def test_library_papers_saved_before_connecting_are_backfilled_once(arxiv_feed):
-    db.save(Paper(url="https://journal.example/x", title="Old save", authors=[], arxiv_id="arXiv:2207.01501v2"))
+    monkeypatch.setattr(arxiv, "recent", lambda c, d: LISTING)
     client.get("/feed")
-    liked = [call[1] for call in arxiv_feed if call[0] == "POST"]
-    assert "http://feed.test/api/papers/2207.01501/feedback" in liked
-    client.get("/feed")
-    assert [call[1] for call in arxiv_feed if call[0] == "POST"] == liked  # not sent again
+    db.set_meta("fetched_at", (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat())
+    monkeypatch.setattr(arxiv, "recent", down)
+    data = client.get("/feed").json()
+    assert "fetched earlier" in data["notice"] and len(data["papers"]) == 2
 
 
-def test_summaries_are_written_once_with_the_readers_work(arxiv_feed, monkeypatch):
-    from app import llm, pitch
-    from app.schemas import Pitch, Pitches
-
+def test_summaries_are_written_once_from_your_papers(fresh, monkeypatch):
+    client.post("/feed/mine", json={"text": "2207.01501"})
     monkeypatch.setattr(llm.client, "api_key", "test-key")
     asked = []
 
     def fake_ask(schema, system, prompt, model, effort):
         asked.append(prompt)
-        return Pitches(pitches=[Pitch(id="2610.10001", what="Measures X.", why="You fit X."), Pitch(id="other", what="", why="")])
+        return Pitches(pitches=[Pitch(id="2610.30001", what="Measures X.", why="You fit X."), Pitch(id="other", what="", why="")])
 
     monkeypatch.setattr(llm, "ask", fake_ask)
-    profile = {"name": "Ada", "categories": ["astro-ph.CO"], "mine": [{"id": "1", "title": "My bispectrum paper", "abstract": "A"}], "liked": []}
-    monkeypatch.setattr(feed, "profile", lambda: profile)
-    paper = {"id": "2610.10001", "title": "New paper", "abstract": "We measure X.", "reasons": {"topics": ["bispectrum"], "authors": []}}
-
+    paper = {"id": "2610.30001", "title": "New", "abstract": "We measure X.", "reasons": {"topics": ["bispectrum"], "authors": []}}
     first = client.post("/feed/summaries", json={"papers": [paper]}).json()
-    assert first == {"2610.10001": {"id": "2610.10001", "what": "Measures X.", "why": "You fit X."}}
-    assert "My bispectrum paper" in asked[0] and "matched on: bispectrum" in asked[0] and "[2610.10001]" in asked[0]
+    assert first == {"2610.30001": {"id": "2610.30001", "what": "Measures X.", "why": "You fit X."}}
+    assert COSMOLOGY[1] in asked[0] and "matched on: bispectrum" in asked[0] and "[2610.30001]" in asked[0]
     assert client.post("/feed/summaries", json={"papers": [paper]}).json() == first
     assert len(asked) == 1  # cached
 
 
-def test_summaries_explain_a_missing_api_key(arxiv_feed, monkeypatch):
-    from app import llm
-
+def test_summaries_explain_a_missing_api_key(monkeypatch):
     monkeypatch.setattr(llm.client, "api_key", None)
     monkeypatch.setattr(llm.client, "auth_token", None)
-    paper = {"id": "2610.10002", "title": "T", "abstract": "A"}
-    response = client.post("/feed/summaries", json={"papers": [paper]})
+    response = client.post("/feed/summaries", json={"papers": [{"id": "2610.10002", "title": "T", "abstract": "A"}]})
     assert response.status_code == 503 and response.json()["detail"]["reason"] == "no_key"
+
+
+def test_saving_a_paper_still_works(monkeypatch):
+    paper = Paper(url="https://arxiv.org/abs/2610.00003", title="T", authors=[])
+    monkeypatch.setattr(extract, "extract", lambda *a, **k: (paper, None))
+    response = client.post("/papers", json={"url": paper.url})
+    assert response.status_code == 200 and response.json()["title"] == "T"

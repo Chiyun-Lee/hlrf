@@ -125,6 +125,23 @@ input[type="search"] { width: 100%; box-sizing: border-box; padding: 10px 12px; 
 }
 .fy-notice { margin: -12px 0 24px; font-size: 14px; color: var(--warn); }
 
+/* Your papers: what the ranking and "why you'd care" start from */
+.fy-mine { margin: -16px 0 28px; font-size: 14px; }
+.fy-mine summary { width: fit-content; color: var(--muted); cursor: pointer; }
+.fy-mine summary:hover { color: var(--ink); }
+.fy-mine-count { margin-left: 4px; padding: 0 7px; border-radius: 9px; background: #e9e8e3; font-size: 12px; font-variant-numeric: tabular-nums; }
+.fy-mine[open] { padding: 14px 18px 4px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.fy-mine[open] summary { margin-bottom: 8px; font-weight: 600; color: var(--text); }
+.fy-mine-help { margin: 0 0 10px; color: var(--muted); }
+.fy-mine-list { margin: 0 0 12px; padding: 0; list-style: none; }
+.fy-mine-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 5px 0; border-top: 1px solid var(--border); font: 15px/1.4 var(--serif); }
+.fy-remove { flex: none; padding: 0; border: 0; background: none; font: 13px system-ui, -apple-system, sans-serif; color: var(--muted); cursor: pointer; }
+.fy-remove:hover { color: var(--warn); }
+.fy-mine-add { display: flex; gap: 8px; }
+.fy-mine-add input { flex: 1; min-width: 0; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font: inherit; }
+.fy-mine-add input:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
+.fy-mine-msg { min-height: 1.4em; margin: 6px 0 8px; color: var(--muted); }
+
 /* Papers */
 .fy-picks, .fy-list { list-style: none; margin: 0; padding: 0; }
 .fy-paper { display: grid; grid-template-columns: minmax(0, 1fr); column-gap: 20px; padding: 24px 0; border-top: 1px solid var(--border); scroll-margin: 24px; }

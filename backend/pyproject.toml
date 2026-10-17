@@ -10,6 +10,8 @@ dependencies = [
     "pymupdf",
     "beautifulsoup4",
     "python-dotenv",
+    "scikit-learn",  # For you's ranking
+    "tzdata",  # arXiv's listing deadline is in US Eastern time; Windows has no time-zone database
 ]
 
 [build-system]

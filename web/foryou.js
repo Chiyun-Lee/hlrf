@@ -1,4 +1,4 @@
-// For you: the latest arXiv listing ranked for you by arxiv-feed (backend/app/feed.py), as a quick daily triage.
+// For you: the latest arXiv listing ranked for you (backend/app/feed.py, ranker.py), as a quick daily triage.
 // Each top pick gets a short summary: what the paper does and why you'd care, given your own papers
 // (backend/app/pitch.py). Sorting a paper (Add to library, More like this, Not for me) trains the ranking and counts
 // toward a daily goal; meeting it on consecutive listing days builds a streak. Keys: j/k move, a/m/n sort, o opens.
@@ -8,22 +8,25 @@
 const PICKS = 5; // shown in full with a summary; the rest of the day is a compact list
 const JSON_HEADERS = { "Content-Type": "application/json" };
 const ORDER = {
-  model: "ranked by what you’ve liked, opened and saved",
-  popular: "ordered by what other readers liked",
+  model: "ranked by your papers and what you’ve liked, opened and saved",
   newest: "newest first",
 };
+let mineFlash = null; // set before re-rendering after an add or remove: keeps Your papers open, with this message
 
 async function forYou(day) {
   let feed;
   try {
-    feed = await api(day ? `/feed?date=${day}` : "/feed");
+    feed = await api(day ? `/feed?day=${day}` : "/feed");
   } catch (e) {
     if (e.status !== 503) throw e;
-    return feedSetup(e.detail ?? {});
+    app.innerHTML = `<section class="fy-setup"><h1>Papers are unavailable</h1><p>${esc(e.message)}</p>
+      <button type="button" class="fy-btn fy-primary" id="fy-retry">Try again</button></section>`;
+    app.querySelector("#fy-retry").onclick = route;
+    return;
   }
   if (!feed.day) {
     app.innerHTML = `<section class="fy-setup"><h1>No papers yet</h1>
-      <p>arxiv-feed hasn't fetched any papers in ${esc(feed.categories.join(", "))}. Run <code>uv run arxiv-feed ingest</code> in the arxiv-feed folder, then reload.</p></section>`;
+      <p>arXiv returned no recent papers in ${esc(feed.categories.join(", "))}. Check <code>FEED_CATEGORIES</code> in <code>backend/.env</code>.</p></section>`;
     return;
   }
 
@@ -51,7 +54,8 @@ async function forYou(day) {
         <p class="fy-sub">${feed.papers.length} papers in ${esc(feed.categories.join(", "))}, ${ORDER[feed.method]}.</p>
       </header>
       <section class="fy-goal" aria-live="polite"></section>
-      <p class="fy-notice" hidden></p>
+      ${minePanel(feed.mine)}
+      <p class="fy-notice"${feed.notice ? "" : " hidden"}>${esc(feed.notice ?? "")}</p>
       ${picks.length ? `<ol class="fy-picks">${picks.map((p) => paperEntry(p, true)).join("")}</ol>` : ""}
       ${rest.length && picks.length ? `<h2 class="fy-rest">The rest of ${state.weekday}’s listing</h2>` : ""}
       ${rest.length ? `<${list} class="fy-list">${rest.map((p) => paperEntry(p, false)).join("")}</${list}>` : ""}
@@ -61,6 +65,7 @@ async function forYou(day) {
   root.state = state;
   renderGoal(root);
   root.addEventListener("click", (e) => onClick(root, e));
+  wireMine(root);
   window.MathJax?.typesetPromise?.([root]);
   loadSummaries(root, picks);
 }
@@ -140,11 +145,11 @@ function renderGoal(root, celebrate = false) {
   else if (streak) hint = `Sort ${goal - sorted} more of ${weekday}’s papers to keep your ${streak}-day streak going.`;
   else hint = `Sort ${goal - sorted} of ${weekday}’s papers to start a streak.`;
   let unlock = "";
-  if (!ranked && learning.use_ml) {
+  if (!ranked) {
     unlock =
       learning.positives >= learning.needed
         ? `<p class="fy-unlock">Your ranking is ready. <button type="button" class="fy-btn fy-primary" data-rerank>Rank this list for me</button></p>`
-        : `<p class="fy-unlock">Mark ${learning.needed - learning.positives} more as <b>More like this</b> to rank this list by your interests.</p>`;
+        : `<p class="fy-unlock">Add your papers below, or mark ${learning.needed - learning.positives} more as <b>More like this</b>, to rank this list by your interests.</p>`;
   }
   const goalEl = root.querySelector(".fy-goal");
   goalEl.className = `fy-goal${done ? " done" : ""}${celebrate ? " celebrate" : ""}`;
@@ -211,7 +216,7 @@ async function onClick(root, e) {
   if (!p) return;
   const fromKeys = !e.isTrusted; // forYouKeys sorts by calling .click(); then move on to the next paper
   if (e.target.closest("a[data-click]")) {
-    // Opening a paper counts as interest, as on arxiv-feed. keepalive lets it finish while the tab opens.
+    // Opening a paper counts as (mild) interest. keepalive lets it finish while the new tab opens.
     fetch(`/feed/${p.id}/feedback`, { method: "POST", keepalive: true, headers: JSON_HEADERS, body: '{"kind":"click"}' });
   } else if (e.target.closest(".fy-thumb")) {
     const kind = e.target.closest(".fy-thumb").dataset.kind;
@@ -225,7 +230,7 @@ async function onClick(root, e) {
 
 async function sendFeedback(root, li, p, kind, moveOn = false) {
   const before = p.feedback;
-  p.feedback = kind === "none" ? null : kind; // optimistic; reverted if arxiv-feed refuses
+  p.feedback = kind === "none" ? null : kind; // optimistic; reverted if the backend refuses
   refresh(li, p);
   try {
     const res = await api(`/feed/${p.id}/feedback`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ kind }) });
@@ -259,7 +264,7 @@ async function addToLibrary(root, li, p, moveOn) {
     const saved = await api("/papers", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ url: p.abs_url, meta }) });
     p.library_id = saved.id;
     button.outerHTML = libraryControl(p);
-    // The backend tells arxiv-feed too; asking here as well gets the new goal progress back.
+    // Library papers already count as liked; this also gets the new goal progress back.
     await sendFeedback(root, li, p, "up", moveOn);
   } catch (e) {
     button.disabled = false;
@@ -311,28 +316,56 @@ document.addEventListener("keydown", (e) => {
   if (target) card.querySelector(target)?.click();
 });
 
-// --- setup and error states ---
+// --- your papers: what the ranking and each "why you'd care" start from ---
 
-// Shown when the backend can't get recommendations (503 from /feed): what's wrong and how to fix it.
-function feedSetup({ reason, message }) {
-  const steps = `
-    <ol class="fy-steps">
-      <li>Start arxiv-feed: in its folder, run <code>uv run arxiv-feed run --port 5055</code></li>
-      <li>Create a token for your account: <code>uv run arxiv-feed token --email you@example.com</code></li>
-      <li>Add both to <code>backend/.env</code> and restart the backend:
-        <pre>ARXIV_FEED_URL=http://127.0.0.1:5055\nARXIV_FEED_TOKEN=…</pre></li>
-    </ol>`;
-  const body = {
-    not_configured: `<p>For you shows each day’s arXiv papers ranked by your arxiv-feed model. Connect it in three steps:</p>${steps}`,
-    unreachable: `<p>${esc(message)} Start it with <code>uv run arxiv-feed run --port 5055</code> in the arxiv-feed folder.</p>`,
-    rejected: `<p>${esc(message)} Create a new one with <code>uv run arxiv-feed token --email you@example.com</code>, put it in <code>backend/.env</code> and restart the backend.</p>`,
-  }[reason] ?? `<p>${esc(message ?? "arxiv-feed returned an error.")}</p>`;
-  app.innerHTML = `<section class="fy-setup">
-      <h1>${reason === "not_configured" ? "Connect arxiv-feed" : "Recommendations are unavailable"}</h1>
-      ${body}
-      <button type="button" class="fy-btn fy-primary" id="fy-retry">Check again</button>
-    </section>`;
-  app.querySelector("#fy-retry").onclick = route;
+function minePanel(mine) {
+  const list = mine.length
+    ? `<ul class="fy-mine-list">${mine
+        .map((p) => `<li><span>${esc(p.title)}</span><button type="button" class="fy-remove" data-id="${esc(p.id)}">Remove</button></li>`)
+        .join("")}</ul>`
+    : "";
+  return `
+    <details class="fy-mine"${mine.length && mineFlash === null ? "" : " open"}>
+      <summary>Your papers <span class="fy-mine-count">${mine.length}</span></summary>
+      <p class="fy-mine-help">${
+        mine.length
+          ? "For you ranks each day’s papers and writes “Why you’d care” from these, plus what you like and save."
+          : "Add your own arXiv papers so For you can rank each day’s papers by your work and say why each one matters to you."
+      }</p>
+      ${list}
+      <form class="fy-mine-add">
+        <input name="text" placeholder="2207.01501, arxiv.org/abs/2502.01722, …" aria-label="arXiv ids or links of your papers" autocomplete="off" />
+        <button type="submit" class="fy-btn fy-primary">Add papers</button>
+      </form>
+      <p class="fy-mine-msg" role="status">${esc(mineFlash ?? "")}</p>
+    </details>`;
+}
+
+function wireMine(root) {
+  mineFlash = null;
+  const panel = root.querySelector(".fy-mine");
+  const message = panel.querySelector(".fy-mine-msg");
+  panel.querySelector("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const button = e.target.querySelector("button");
+    button.disabled = true;
+    message.textContent = "Looking them up on arXiv…";
+    try {
+      const res = await api("/feed/mine", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ text: e.target.text.value }) });
+      mineFlash = res.unknown.length ? `arXiv doesn’t know ${res.unknown.join(", ")}.` : "";
+      route(); // re-rank with your papers
+    } catch (err) {
+      message.textContent = err.message;
+      button.disabled = false;
+    }
+  });
+  panel.addEventListener("click", async (e) => {
+    const button = e.target.closest(".fy-remove");
+    if (!button) return;
+    await api(`/feed/mine/${button.dataset.id}`, { method: "DELETE" });
+    mineFlash = "";
+    route();
+  });
 }
 
 // --- text helpers ---

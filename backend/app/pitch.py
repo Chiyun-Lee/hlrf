@@ -1,7 +1,7 @@
 """For you's summaries: what a new arXiv paper does and why this reader should care, given their own work.
 
-One Claude call per batch of papers; the reader's own and recently liked papers (from arxiv-feed's /api/profile) are
-the context for "why". Uses SUMMARY_MODEL / SUMMARY_EFFORT, like the page notes.
+One Claude call per batch of papers; the reader's own and recently liked papers (feed.profile()) are the context for
+"why". Uses SUMMARY_MODEL / SUMMARY_EFFORT, like the page notes.
 """
 
 from . import llm, summarize
@@ -19,7 +19,7 @@ Use $...$ LaTeX only where words won't do. Return one entry per paper, with its 
 
 
 def write(papers: list[dict], profile: dict) -> list[Pitch]:
-    """papers: [{id, title, abstract, reasons?}] as /api/feed returns them; profile: as /api/profile returns it."""
+    """papers: [{id, title, abstract, reasons?}] as GET /feed returns them; profile: as feed.profile() returns it."""
 
     def listing(items: list[dict]) -> str:
         return "\n".join(f"- {p['title']}\n  {p['abstract'][:ABSTRACT_CHARS]}" for p in items) or "(none yet)"
@@ -30,7 +30,7 @@ def write(papers: list[dict], profile: dict) -> list[Pitch]:
         hint = f"\nTheir ranking model matched on: {', '.join(matched)}" if matched else ""
         today.append(f"[{p['id']}] {p['title']}\n{p['abstract']}{hint}")
     prompt = (
-        f"The researcher: {profile.get('name', 'unknown')}, following {', '.join(profile.get('categories', []))}.\n\n"
+        f"The researcher follows {', '.join(profile.get('categories', []))} on arXiv.\n\n"
         f"Their own papers:\n{listing(profile.get('mine', []))}\n\n"
         f"Papers they recently marked relevant:\n{listing(profile.get('liked', []))}\n\n"
         "Today's papers to summarise:\n\n" + "\n\n".join(today)
