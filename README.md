@@ -1,0 +1,7 @@
+Speed of generation has exploded, and the attention economy has fried our attention spans, but humans still need to understand the latest developments. Apps like Duolingo have shown learning hard things can be gameified, immersive and holds you accountable. 
+
+We all have papers that we've been meaning to read, but never get round to reading -- Can we help researchers understand papers within 5 minutes, so that we never procrastinate?
+
+The goal is to have a Google Chrome widget which allows you to save the contents of a page or research manuscript, and it extracts the citations in a more intelligent manner than how Mendeley and Zotero do it. 
+
+On the app, the user can view an interactive version of the paper's PDF, where the format of the paper is kept intact (so that the user can navigate the original paper still), but blocks of paragraphs are replaced by AI-summaried bullet points in much larger font and occupy the space that the original content occupied. Blocks of text are now encapsulated by a box and in the top-right corner, there is a "switch" button which allows you to flip between the original text and the summarised version. Below the switch button, is a question button where the user can ask an agent a question, after which the agent has the option to modify the summary or bring the user to a side-lesson to explain a wider concept. 

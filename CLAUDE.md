@@ -1,0 +1,1 @@
+- Prioritise simplicity, extendability and clarity. This is a project directory for a team hackathon. 
