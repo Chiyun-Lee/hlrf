@@ -1,40 +1,82 @@
-Speed of generation has exploded, and the attention economy has fried our attention spans, but humans still need to understand the latest developments. Apps like Duolingo have shown learning hard things can be gameified, immersive and holds you accountable. 
+<p align="center"><img src="docs/images/banner.png" alt="HLRF: human learning + reinforced feedback. Team Seedless Grapes: Alex, Chiyun, Jacky, Jialin, Richard" width="760"></p>
 
-We all have papers that we've been meaning to read, but never get round to reading -- Can we help researchers understand papers within 5 minutes, so that we never procrastinate?
+# HLRF: understand a paper in five minutes
 
-The goal is to have a Google Chrome widget which allows you to save the contents of a page or research manuscript, and it extracts the citations in a more intelligent manner than how Mendeley and Zotero do it. 
+**Human learning + reinforced feedback.** Save any paper from Chrome. HLRF turns it into a paper you can actually get through. Hand-drawn notes sit on top of the original PDF, a tutor answers your questions, Duolingo-style quizzes make it stick, and AI agents check whether the results hold up.
 
-On the app, the user can view an interactive version of the paper's PDF, where the format of the paper is kept intact (so that the user can navigate the original paper still), but blocks of paragraphs are replaced by AI-summaried bullet points in much larger font and occupy the space that the original content occupied. Blocks of text are now encapsulated by a box and in the top-right corner, there is a "switch" button which allows you to flip between the original text and the summarised version. Below the switch button, is a question button where the user can ask an agent a question, after which the agent has the option to modify the summary or bring the user to a side-lesson to explain a wider concept. 
-## Running the MVP
+AI now discovers faster than we can read. Duolingo showed that people can learn hard things when learning is gamified and immersive. HLRF puts the two together: discovery at AI speed, paired with learning that sticks.
 
-**Backend** (Python, [uv](https://docs.astral.sh/uv/)):
+<p align="center"><img src="docs/images/problem.png" alt="The problem: AI discovers faster than we can read; Duolingo cracked hard learning; can we get the best of both worlds?" width="760"></p>
+
+## Quick start
+
+You need [uv](https://docs.astral.sh/uv/), Node and Chrome.
+
 ```sh
+# 1. Backend: also serves the app at http://localhost:8000
 cd backend
-cp .env.example .env   # add your ANTHROPIC_API_KEY
+cp .env.example .env            # add your ANTHROPIC_API_KEY
 uv sync --extra claude-code
 uv run --extra claude-code uvicorn app.main:app --reload
-```
-Keep `--extra claude-code` on every `uv sync` and `uv run`: without it uv uninstalls the Claude Agent SDK, and the agent review (and `LLM_BACKEND=claude-code`) stop working.
-`POST /papers {"url": ..., "meta": {...}}` downloads the paper, extracts its text page by page (`app/extract.py`), and makes one Claude call to read the title and authors (including equal-contribution and corresponding markers). The record (`app/schemas.py`) is stored in SQLite. `GET /papers/{id}` returns it. Set `EXTRACT_MODEL` / `EXTRACT_EFFORT` in `.env` to trade speed for accuracy.
 
-**Extension**:
-```sh
+# 2. Chrome extension
 cd extension && npm install && npm run build
 ```
-Then open `chrome://extensions`, turn on Developer mode, choose "Load unpacked" and select `extension/`. On a paper page, click the icon, then **Save this paper**.
 
-**Paper browser** (`web/`, plain HTML/JS, no build): with the backend running, open http://localhost:8000/ (or click **Open library** in the extension popup). It lists saved papers. Each paper opens in the reader (`web/reader.js`): the PDF rendered with pdf.js, with a "doodle note" over each paragraph, plain-language bullets in a handwritten font that blur the original underneath, in the style of [Claire Lamman's annotated papers](https://clairelamman.com/paper_summaries.html). The switch in each note's top-right corner flips back to the original. Notes are written page by page as you scroll (`app/summarize.py`, `GET /papers/{id}/pages/{n}/summary`) and cached. The **Outreach / Technical / Expert** switch picks who they're written for (`app/levels.py`): anyone, technical people from a neighbouring field, or people in the field. Notes, graphical abstracts, summary cards and quizzes are written and cached per level (`?level=` on the API), and the tutor pitches its answers to it. Notes come in three kinds: summaries (one per section), figure callouts (Claude also sees the page image, so it reads the figure itself and doodles hand-drawn circles and arrows with short notes on it, `web/marks.js`) and asides (funding, references, author lists...), which are just blurred so the science stands out. Highlight any text, in a note or in the paper, and click **Ask** to chat about it with a tutor (`app/tutor.py`); once you say you've got it, the tutor adds anything important to that note (with undo). Notes can be edited in place (✎ on hover), and the tutor can reword them too when asked. When you're done reading, **Make graphical abstract** (`app/abstract.py`, drawn as SVG by `web/abstract.js`) writes notes for any unread pages and composes one slide: a title, the takeaway, a flow from question to findings, key points and one or two key figures cropped from the PDF; **Export SVG** saves it with the font and images embedded. Below the slide, **summary cards** (`app/cards.py`, drawn by `web/cards.js`) give the whole paper at a glance: a TL;DR with headline numbers, the logic flow, a mind map, key findings, an evidence map, caveats, simple charts redrawn from numbers the paper states (each number is checked against the paper's text, and charts that fail are dropped), and the key figures cropped from the PDF, then the agent review's Reproduction card (below). A deck is a snapshot of the notes it was made from: when a note changes afterwards (the tutor's edit or your own), the cards say so and offer **Remake cards**. **Quiz me** (`app/quiz.py`, `web/quiz.js`) then runs a Duolingo-style quiz of multiple-choice and fill-in-the-blank questions; missed ones come back until you get them, and **Show me the proof** (`app/proof.py`) shows the original paragraph with the key words highlighted next to your note. **Revision** (`app/revision.py`, `web/revision.js`, `#/revision`) is Duolingo-style practice across all your papers: every quiz question you get is kept in a deck with spaced repetition (right answers come back after 1, 3, 7, 16, then 35 days; wrong ones come back today), and **Start review** mixes ten due questions across papers. Answers, in reviews and in a paper's own quiz, earn XP towards a daily goal of 50, practising on consecutive days builds a streak, and each paper shows a strength meter, with **Practise** for just that paper or **Add questions** to write a quiz for it into the deck. **My learning** (`app/memory.py`, `#/me`) remembers your tutor questions and quiz results and keeps a short learner profile (background, struggles, strengths, interests, preferences) that the notes, tutor and quiz adapt to; you can edit or wipe it there. One reader per install. Papers we could only get as HTML show their text with the same notes. The look is shared by `web/style.css` and `extension/popup.css`: a plain interface (Inter, navy as the one brand colour, STIX Two for paper titles, one button style), with the xkcd handwriting only on the paper itself (doodle notes, figure scribbles, your whiteboard writing and the graphical abstract slide). The handwriting font is [xkcd-script](https://github.com/ipython/xkcd-font) (CC BY-NC 3.0).
+Load the extension:
 
-**Write on the paper and Ask** (`web/ink.js`, `app/ink.py`), as in the PDF Notebook: **✎ Write** (bottom-left of a paper's page) lets you write or draw on the PDF with a pen, mouse or finger: a pen and a highlighter, **text boxes** (T: click the page and type; click one to edit it), three colours for pen and text (picking one while typing recolours the box), a **lasso** (circle strokes, text boxes or answer cards to drag them elsewhere or delete them with × or ⌫), an eraser (strokes and text boxes), undo/redo (⌘Z / ⇧⌘Z). Once a stylus has touched the page, fingers scroll instead of drawing. **Ask ✦** sends the part of the paper on screen, with your ink and text boxes on it, plus the whole paper's text, the notes on screen and your typed text, to Claude (`INK_MODEL`, default `claude-opus-5-5`; `INK_EFFORT`, default `medium`). Claude reads the handwriting and answers in one card pinned next to it: Markdown with maths, citing pages, pitched at the reading level. The card says what it read; drag it by its header, fold it or remove it. A later Ask builds on the earlier cards. Ink and cards are saved per paper (`GET`/`PUT /papers/{id}/ink`, `POST /papers/{id}/ink/ask`). Ink works on PDF pages only. With ✎ Write off, the ink lets every click through, so notes, pins and highlight-to-ask work as before. Each paper in the library has two ways in: **Learn** opens the reader with its notes, and **✎ Whiteboard** (`#/papers/{id}/whiteboard`) opens the paper as printed with ✎ Write already on.
+1. Open `chrome://extensions` and turn on Developer mode.
+2. Choose **Load unpacked** and select `extension/`.
+3. On any paper page, click the HLRF icon, then **Save this paper**.
 
-**Methods pins** (`web/pins.js`, `app/pins.py`): labelled buttons on a paper's figures and tables. Every figure and table gets a **Data provenance** button first (where its numbers come from), then any **Agent-reviewed concern**, then **Method**. Each opens a card with a plain line and a line for researchers, plus how far the claim was checked (from the paper, code re-run, or tested). On wide screens they sit in a rail beside the page, and hovering one outlines its figure. Each figure or table gives its page, its box in PDF points and how its caption starts, so pins measured on one version of a paper are dropped rather than misplaced on another. Pins come from an agent review (below) and are stored per library paper; a few ship with the app as one JSON file per arXiv id in `backend/app/pins/`. The demo is arXiv [2506.22373](https://arxiv.org/abs/2506.22373v2) (save its v2 to see them).
+> Keep `--extra claude-code` on every `uv sync` and `uv run`. Without it, uv removes the Claude Agent SDK and the agent review stops working. If you'd rather use your Claude subscription than an API key, set `LLM_BACKEND=claude-code` in `.env`.
 
-**Agent review** (`app/review.py`, `web/review.js`): **Run paper2agent review** on a paper's page reviews it in the background. A *full* review uses the paper2agent skill to turn the paper and its code into tools, re-runs the authors' code and tests the claims (30 min–2 h); a *quick* one only reads the paper, its code and its data sources (5–15 min). Both write a review (`review.md`) and end with the `paper-pins` skill (`backend/skills/paper-pins/`), which pins Data provenance and Agent-reviewed concerns on every figure and table found in the PDF (`python -m app.pins targets|check|render|save` from `backend/`). The pins also carry the review's main problems and, for a full review, the paper's main claims with the paper's number, the re-run's and whether each holds; the summary cards end with a **Reproduction** card drawn from them, read live, so it updates whenever a review finishes. A panel follows the run live: progress, the stage it's on and each step the agent takes; leaving the page doesn't stop it. In the library, **AI reviewed** shows only the papers with pins. Each review runs Claude Code (Claude Agent SDK, `uv sync --extra claude-code`) in its own process, in a folder under `REVIEWS_DIR` (default `~/.human-pretraining/reviews`). A full review needs the paper2agent skill (`PAPER2AGENT_SKILL`, default `~/.claude/skills/paper2agent`) and runs the authors' code on your machine. `REVIEW_DEMO=1` replays a scripted review without calling Claude, for UI work.
+Run the tests with `cd backend && uv run --extra claude-code pytest`.
 
-**For you** (`web/foryou.js`, the second tab): each day's new papers from the arXiv categories and bioRxiv subjects you tick under **arXiv and bioRxiv categories** (or click the categories named at the top of the page), fetched straight from the arXiv API (`app/arxiv.py`) and the bioRxiv API (`app/biorxiv.py`; weekend preprints join Monday) and ranked for you (`app/feed.py`, `app/ranker.py`: logistic regression on TF-IDF words, phrases and authors). Add your own papers under **Your papers**: paste your INSPIRE profile link (re-checked daily for new papers), arXiv ids, or DOIs and links to your published papers (`app/published.py`: each becomes its arXiv version when it has one, found through INSPIRE or OpenAlex, and otherwise the journal's own record). Under **Zotero library**, give the path of your Zotero BibTeX export (Better BibTeX's "Keep updated" export keeps it current); its arXiv papers count as ones you're interested in, re-read whenever the file changes; the ranking also learns from More like this, Not for me, the papers you open and everything in the library. Every paper gets a two-line summary from Claude, top five picks first: what it does and why you'd care given your papers (`app/pitch.py`, batched and cached). Sorting 5 of a day's papers meets the daily goal, and doing that on consecutive listing days builds a streak. Keys: `j`/`k` move, `a` add to library, `m` more like this, `n` not for me, `o` open. A newly ticked category brings in its last month of papers; `FEED_CATEGORIES` in `.env` sets the arXiv categories followed until you pick some (default `astro-ph.CO`). Without `ANTHROPIC_API_KEY` it shows abstracts instead of summaries.
+## What you get
 
-**Claude through your subscription**: set `LLM_BACKEND=claude-code` in `backend/.env` and run `uv sync --extra claude-code`. Every Claude call (summaries, saving papers, page notes) then goes through the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview), which runs Claude Code with the login from `claude` instead of an API key (`app/llm.py`). For running the app yourself: Anthropic doesn't allow offering claude.ai login in products you distribute.
+### 📝 Notes drawn on the paper
+The original PDF stays intact. Each paragraph gets plain-language bullets handwritten over it. Figures get circles, arrows and scribbled callouts, and a switch flips any note back to the original text. You can pitch everything at **Outreach**, **Technical** or **Expert** level.
 
-**Journal club** (`web/club.js`, `backend/app/club.py`, `backend/journal_club/`, the fifth tab): the papers of a *card set* become PhD-student agents. In one night they map every pair of papers (agree / disagree / shared limitation), debate the clashes under a PI and write ranked research directions, each backed by verbatim quotes that are string-checked against the papers (the *quote gate*). Then they explore: the PI proposes **hypotheses** that go beyond any one paper (joining agreeing papers, settling a dispute, explaining a shared limitation), each with a mechanism, a test that would refute it and a prediction, resting on quoted premises; in a second round each paper's student objects or supports, the PI keeps, revises or drops each one, and the survivors are ranked by a round-robin of head-to-head comparisons (`journal_club/rounds/explore.py`). **Start a night** fills itself in: pick a card set, take one of the starting questions or write your own, and it suggests a free name and says how long the night will take (`estimate_night_s` in `app/club.py`, measured at about 6.5 minutes for 9 papers with the Claude Code login). Cards are made from your library by default: save the papers (by link or PDF), then **Make a card set from your library** reads 2 to 16 of them into cards (one Claude call each, through `ingest_text` in `journal_club/cards.py`, quote-gated against the paper's text); two card sets and a real night on DESI cosmology papers ship with the app (`backend/journal_club/examples/`), so the tab has something to show before any Claude call. A night's page is a projection of its append-only `events.jsonl` (`journal_club/state.py`): the overview, the pair map, the directions, the hypotheses, the disputes (folded to the PI's ruling) and the papers. A sticky bar lists the night's steps in the order they ran, grouped by round (round 1: map, debate, directions, hypotheses; round 2: critique; then the overview); click one to jump to what it made (critique opens each hypothesis's round 2). Click any paper to dim everything that doesn't involve it. While a night runs the page shows the step, its count, the time so far and the time left, polled live; **Minutes** opens the night's minutes rendered in the app. A **backtest** (hold out the papers dated on or after T and score the directions against them, next to a one-call baseline, with a judge on a different model that reads the held-out papers in full, from the `<id>.txt` kept beside each card) runs from the command line only (`uv run jc backtest`) and isn't shown in the tab. Runs and card sets live in `JOURNAL_CLUB_DIR` (default `~/.human-pretraining/journal-club`); a run that stopped is resumed by starting it again, with no LLM calls for the steps already in its archive. The club follows `LLM_BACKEND` (API key or your Claude subscription); `JC_MODEL` / `JC_JUDGE_MODEL` pick its models and `JC_LLM=mock` runs the deterministic offline backend in seconds, for UI work. The same engine runs from the command line (`uv run jc --help` in `backend/`: run, backtest, minutes, and `ingest` for a folder of PDFs that aren't in the library, through the same `ingest_text`). The contract is [backend/journal_club/DESIGN.md](backend/journal_club/DESIGN.md); the figures and research notes are in [docs/journal-club/](docs/journal-club/).
+<img src="docs/images/notes.png" alt="Doodle notes over the AlphaFold paper" width="760">
 
-**Tests**: `cd backend && uv run --extra claude-code pytest` (add `RUN_LIVE=1` to call Claude end to end; `JC_LIVE=1` for the journal club's live tests).
+### ✎ Ask about anything, or write on the whiteboard
+To ask the tutor about a passage, highlight it and click **Ask**. You can also open a paper in **✎ Whiteboard** mode and write on it with a pen or finger. **Ask ✦** then reads your handwriting and pins an answer next to it.
+
+### 🔬 Agent-reviewed figures
+An agent review re-runs the authors' code and tests the paper's claims. It then pins **Data**, **Concern** and **Method** cards on every figure.
+
+<img src="docs/images/figures.png" alt="Figure scribbles and agent-review pins" width="760">
+
+### 🖼️ A graphical abstract and summary cards
+The paper on one slide: the question, what they did, what they found, and the key figures. Below it are cards for the TL;DR, the logic, the evidence and the caveats, plus charts redrawn from numbers checked against the paper.
+
+<img src="docs/images/abstract.png" alt="Graphical abstract" width="760">
+
+### 🔥 Quizzes, streaks and spaced repetition
+Duolingo-style questions about each paper. **Show me the proof** jumps to the exact paragraph behind each answer. Questions come back on a spaced-repetition schedule, and you earn XP, a daily goal and a streak.
+
+<img src="docs/images/quiz.png" alt="A revision quiz" width="760">
+
+### 🧪 And more
+- **For you**: each day's new arXiv and bioRxiv papers, ranked for you, with a two-line pitch for each.
+- **My learning**: a learner profile that the notes, tutor and quizzes adapt to.
+- **Journal club**: your papers become PhD-student agents. Overnight they debate each other and propose new hypotheses, each backed by quotes checked against the papers.
+
+<img src="docs/images/journal-club.png" alt="A journal club night" width="760">
+
+## How it fits together
+
+| Part | What it is |
+|---|---|
+| `extension/` | A Chrome extension (MV3, TypeScript) that saves the page or PDF you're on |
+| `backend/` | A FastAPI and SQLite backend that makes every Claude call |
+| `web/` | The reader app: plain HTML and JS, with no build step |
+
+**Every feature, its code, and its settings are in [docs/features.md](docs/features.md).**
+
+The handwriting font is [xkcd-script](https://github.com/ipython/xkcd-font) (CC BY-NC 3.0). The note style is inspired by [Claire Lamman's annotated papers](https://clairelamman.com/paper_summaries.html).
+
+## Licence
+
+Apache 2.0, see [LICENSE](LICENSE). Built by Team Seedless Grapes: Alex, Chiyun, Jacky, Jialin and Richard.
