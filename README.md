@@ -65,6 +65,8 @@ Duolingo-style questions about each paper. **Show me the proof** jumps to the ex
 
 <img src="docs/images/journal-club.png" alt="A journal club night" width="760">
 
+<img src="docs/journal-club/journal_club_debate.svg" alt="How a journal club night works: the paper agents map every pair of papers as agreeing, clashing or sharing a limitation, debate the clashes under a PI, and turn consensus, unresolved clashes and shared limitations into ranked research directions and hypotheses" width="760">
+
 ## How it fits together
 
 | Part | What it is |
