@@ -65,7 +65,7 @@ Duolingo-style questions about each paper. **Show me the proof** jumps to the ex
 
 <img src="docs/journal-club/journal_club_debate.svg" alt="How a journal club night works: the paper agents map every pair of papers as agreeing, clashing or sharing a limitation, debate the clashes under a PI, and turn consensus, unresolved clashes and shared limitations into ranked research directions and hypotheses" width="760">
 
-<img src="docs/images/journal-club.png" alt="The pair map of a journal club night on DESI papers, with the desi2024vi and planck2018vi cell selected: they disagree, with the note and a checked quote from each paper" width="760">
+<img src="docs/images/journal-club-pair-map.png" alt="The pair map of a journal club night on DESI papers, with the desi2024vi and planck2018vi cell selected: they disagree, with the note and a checked quote from each paper" width="760">
 
 ## How it fits together
 
