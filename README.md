@@ -63,9 +63,9 @@ Duolingo-style questions about each paper. **Show me the proof** jumps to the ex
 - **My learning**: a learner profile that the notes, tutor and quizzes adapt to.
 - **Journal club**: your papers become PhD-student agents. Overnight they debate each other and propose new hypotheses, each backed by quotes checked against the papers.
 
-<img src="docs/images/journal-club.png" alt="A journal club night" width="760">
-
 <img src="docs/journal-club/journal_club_debate.svg" alt="How a journal club night works: the paper agents map every pair of papers as agreeing, clashing or sharing a limitation, debate the clashes under a PI, and turn consensus, unresolved clashes and shared limitations into ranked research directions and hypotheses" width="760">
+
+<img src="docs/images/journal-club.png" alt="The pair map of a journal club night on DESI papers, with the desi2024vi and planck2018vi cell selected: they disagree, with the note and a checked quote from each paper" width="760">
 
 ## How it fits together
 
