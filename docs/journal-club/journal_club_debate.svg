@@ -1,0 +1,182 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="600" viewBox="0 0 1120 600" role="img" aria-labelledby="f2t f2d">
+<style>
+:root {
+  --bg: #f4f5f9; --surface: #ffffff; --ink: #1d2753; --muted: #5b6386; --line: #c6cbde;
+  --lit: #2f6fb3; --lit-tint: #e5edf8;
+  --data: #a8620c; --data-tint: #f9eedd;
+  --agree: #2b7a4b; --agree-tint: #e2f1e7;
+  --clash: #b2393a; --clash-tint: #f8e3e1;
+  --limit: #74489f; --limit-tint: #eee7f7;
+  --display: "Bricolage Grotesque", "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  --body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #11142a; --surface: #1a1f3d; --ink: #e2e6f6; --muted: #9ba3c6; --line: #353d68;
+  --lit: #82b2ec; --lit-tint: #1c2b4b; --data: #e3a659; --data-tint: #392917;
+  --agree: #6fc490; --agree-tint: #16321f; --clash: #ee8582; --clash-tint: #3a1d20;
+  --limit: #b99ee8; --limit-tint: #2a2143; } }
+svg text { font-family: var(--body); fill: var(--ink); }
+.t-h { font-family: var(--display); font-weight: 700; font-size: 17px; }
+.t-b { font-weight: 700; font-size: 14px; }
+.t-s { font-size: 12.5px; fill: var(--muted); }
+.t-i { font-size: 12.5px; font-style: italic; fill: var(--ink); }
+.t-m { font-family: var(--mono); font-size: 11px; fill: var(--muted); letter-spacing: .04em; }
+.t-tag { font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; }
+.box { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
+.panel-lit { fill: var(--lit-tint); stroke: var(--lit); stroke-width: 1.2; }
+.panel-data { fill: var(--data-tint); stroke: var(--data); stroke-width: 1.2; }
+.c-lit { fill: var(--lit); } .c-data { fill: var(--data); }
+.c-agree { fill: var(--agree); } .c-clash { fill: var(--clash); } .c-limit { fill: var(--limit); } .c-ink { fill: var(--ink); }
+.tint-agree { fill: var(--agree-tint); stroke: var(--agree); stroke-width: 1.2; }
+.tint-clash { fill: var(--clash-tint); stroke: var(--clash); stroke-width: 1.2; }
+.tint-limit { fill: var(--limit-tint); stroke: var(--limit); stroke-width: 1.2; }
+.card { fill: var(--surface); stroke: var(--ink); stroke-width: 1.6; }
+.card-band { fill: var(--ink); }
+.on-band { fill: var(--surface); }
+.rule { stroke: var(--line); stroke-width: 1; }
+.flow { fill: none; stroke: var(--muted); stroke-width: 1.6; }
+.flow-lit { fill: none; stroke: var(--lit); stroke-width: 1.8; }
+.flow-data { fill: none; stroke: var(--data); stroke-width: 1.8; }
+.arrowhead { fill: var(--muted); }
+.e-agree { stroke: var(--agree); stroke-width: 2.4; fill: none; }
+.e-clash { stroke: var(--clash); stroke-width: 2.4; fill: none; stroke-dasharray: 2 4; stroke-linecap: round; }
+.e-limit { stroke: var(--limit); stroke-width: 2.4; fill: none; stroke-dasharray: 9 5; }
+.agent { fill: var(--surface); stroke: var(--ink); stroke-width: 1.6; }
+.pi { fill: var(--ink); }
+.chip { fill: var(--surface); stroke-width: 1.2; }
+.gate { fill: var(--surface); stroke: var(--ink); stroke-width: 1.6; stroke-dasharray: 5 3; }
+.out { fill: var(--ink); }
+.out-t { fill: var(--surface); }
+.out-s { fill: var(--surface); opacity: .82; font-size: 12.5px; }
+</style>
+<rect width="1120" height="600" rx="10" style="fill: var(--surface)"/>
+        <title id="f2t">Journal club night</title>
+        <desc id="f2d">Eight paper agents map every pair as agreeing, clashing or sharing a limitation. Clashes are debated and ruled on by a PI. Consensus, unresolved clashes and shared limitations feed research directions and hypotheses, which are critiqued and ranked.</desc>
+        <defs>
+          <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+
+        <!-- round bands -->
+        <text class="t-tag" x="24" y="34">ROUND 1</text>
+        <line class="rule" x1="90" y1="30" x2="1096" y2="30"/>
+
+        <!-- Map: the ring of agents -->
+        <text class="t-h" x="24" y="72">Map</text>
+        <text class="t-s" x="24" y="92">every pair of papers: 8 papers → 28 pairs</text>
+
+        <!-- edges (drawn under the agents) -->
+        <g>
+          <line class="e-agree" x1="170" y1="205" x2="251" y2="239"/>
+          <line class="e-agree" x1="285" y1="320" x2="170" y2="435"/>
+          <line class="e-agree" x1="89" y1="401" x2="89" y2="239"/>
+          <line class="e-agree" x1="170" y1="205" x2="251" y2="401"/>
+          <line class="e-clash" x1="251" y1="239" x2="55" y2="320"/>
+          <line class="e-clash" x1="251" y1="401" x2="89" y2="401"/>
+          <line class="e-limit" x1="285" y1="320" x2="89" y2="239"/>
+          <line class="e-limit" x1="170" y1="435" x2="55" y2="320"/>
+        </g>
+        <g>
+          <circle class="agent" cx="170" cy="205" r="22"/><text class="t-b" x="170" y="210" text-anchor="middle">P1</text>
+          <circle class="agent" cx="251" cy="239" r="22"/><text class="t-b" x="251" y="244" text-anchor="middle">P2</text>
+          <circle class="agent" cx="285" cy="320" r="22"/><text class="t-b" x="285" y="325" text-anchor="middle">P3</text>
+          <circle class="agent" cx="251" cy="401" r="22"/><text class="t-b" x="251" y="406" text-anchor="middle">P4</text>
+          <circle class="agent" cx="170" cy="435" r="22"/><text class="t-b" x="170" y="440" text-anchor="middle">P5</text>
+          <circle class="agent" cx="89" cy="401" r="22"/><text class="t-b" x="89" y="406" text-anchor="middle">P6</text>
+          <circle class="agent" cx="55" cy="320" r="22"/><text class="t-b" x="55" y="325" text-anchor="middle">P7</text>
+          <circle class="agent" cx="89" cy="239" r="22"/><text class="t-b" x="89" y="244" text-anchor="middle">P8</text>
+        </g>
+        <rect class="pi" x="142" y="304" width="56" height="32" rx="6"/>
+        <text class="t-b out-t" x="170" y="325" text-anchor="middle">PI</text>
+
+        <!-- legend -->
+        <g>
+          <line class="e-agree" x1="24" y1="494" x2="60" y2="494"/><text class="t-s" x="70" y="498">agree</text>
+          <line class="e-clash" x1="24" y1="518" x2="60" y2="518"/><text class="t-s" x="70" y="522">disagree</text>
+          <line class="e-limit" x1="24" y1="542" x2="60" y2="542"/><text class="t-s" x="70" y="546">share a limitation</text>
+          <rect class="pi" x="168" y="484" width="22" height="16" rx="3"/><text class="t-s" x="198" y="497">PI: chairs, rules,</text>
+          <text class="t-s" x="198" y="514">checks every quote</text>
+          <text class="t-s" x="24" y="576">Each verdict cites one passage from each paper.</text>
+        </g>
+
+        <!-- fan out from the ring -->
+        <path class="flow" d="M312,300 C336,300 330,190 356,190" marker-end="url(#ah2)"/>
+        <path class="flow" d="M312,320 C334,320 334,330 356,330" marker-end="url(#ah2)"/>
+        <path class="flow" d="M312,340 C336,340 330,500 356,500" marker-end="url(#ah2)"/>
+
+        <!-- Consensus lane -->
+        <rect class="tint-agree" x="360" y="148" width="280" height="84" rx="10"/>
+        <text class="t-h" x="378" y="176">Consensus</text>
+        <text class="t-tag c-agree" x="622" y="176" text-anchor="end">AGREE</text>
+        <text class="t-s" x="378" y="198">claims two or more papers support,</text>
+        <text class="t-s" x="378" y="216">each backed by a quote from both</text>
+
+        <!-- Clashes lane -->
+        <rect class="tint-clash" x="360" y="252" width="280" height="186" rx="10"/>
+        <text class="t-h" x="378" y="280">Clashes → debate</text>
+        <text class="t-tag c-clash" x="622" y="280" text-anchor="end">DISAGREE</text>
+        <text class="t-s" x="378" y="302">the top 5 disagreements; the two</text>
+        <text class="t-s" x="378" y="320">students defend with quotes</text>
+        <text class="t-s" x="378" y="338">for 2 turns each</text>
+        <text class="t-m" x="378" y="370">PI RULES</text>
+        <rect class="chip" x="378" y="382" width="74" height="28" rx="14" style="stroke: var(--clash)"/>
+        <text class="t-s" x="415" y="400" text-anchor="middle" style="fill: var(--ink)">stands</text>
+        <rect class="chip" x="460" y="382" width="84" height="28" rx="14" style="stroke: var(--clash)"/>
+        <text class="t-s" x="502" y="400" text-anchor="middle" style="fill: var(--ink)">contested</text>
+        <rect class="chip" x="552" y="382" width="80" height="28" rx="14" style="stroke: var(--clash); stroke-width: 2.2"/>
+        <text class="t-b" x="592" y="400" text-anchor="middle" style="font-size: 12.5px">unresolved</text>
+
+        <!-- Shared limitations lane -->
+        <rect class="tint-limit" x="360" y="458" width="280" height="84" rx="10"/>
+        <text class="t-h" x="378" y="486">Shared limitations</text>
+        <text class="t-tag c-limit" x="622" y="486" text-anchor="end">GAP</text>
+        <text class="t-s" x="378" y="508">a weakness that two or more</text>
+        <text class="t-s" x="378" y="526">papers hit in the same way</text>
+
+        <!-- bus collecting the three lanes -->
+        <path class="flow" d="M640,190 H666"/>
+        <path class="flow" d="M640,396 H666"/>
+        <path class="flow" d="M640,500 H666"/>
+        <path class="flow" d="M666,500 V112"/>
+        <path class="flow" d="M666,226 H686" marker-end="url(#ah2)"/>
+        <path class="flow" d="M666,112 H1004 V146" marker-end="url(#ah2)"/>
+
+        <!-- Directions -->
+        <rect class="box" x="690" y="150" width="196" height="160" rx="10" style="stroke: var(--ink); stroke-width: 1.4"/>
+        <text class="t-h" x="706" y="178">Directions</text>
+        <text class="t-s" x="706" y="200">from unresolved clashes</text>
+        <text class="t-s" x="706" y="218">and shared limitations</text>
+        <line class="rule" x1="706" y1="234" x2="870" y2="234"/>
+        <text class="t-i" x="706" y="256">“The field moves from A</text>
+        <text class="t-i" x="706" y="274">to B, because P3 and P8</text>
+        <text class="t-i" x="706" y="292">both hit limitation L.”</text>
+
+        <!-- Hypotheses -->
+        <rect class="box" x="906" y="150" width="196" height="160" rx="10" style="stroke: var(--ink); stroke-width: 1.4"/>
+        <text class="t-h" x="922" y="178">Hypotheses</text>
+        <text class="t-s" x="922" y="200">beyond any one paper:</text>
+        <text class="t-s" x="922" y="218">join a consensus, settle</text>
+        <text class="t-s" x="922" y="236">a clash, explain a limit</text>
+        <line class="rule" x1="922" y1="252" x2="1086" y2="252"/>
+        <text class="t-m" x="922" y="270">MECHANISM</text>
+        <text class="t-m" x="922" y="285">REFUTING TEST</text>
+        <text class="t-m" x="922" y="300">PREDICTION</text>
+
+        <!-- Critique (round 2) -->
+        <path class="flow" d="M1004,310 V340" marker-end="url(#ah2)"/>
+        <rect class="box" x="906" y="344" width="196" height="96" rx="10" style="stroke: var(--ink); stroke-width: 1.4"/>
+        <text class="t-h" x="922" y="372">Critique</text>
+        <text class="t-tag" x="1086" y="372" text-anchor="end">ROUND 2</text>
+        <text class="t-s" x="922" y="394">each student supports or</text>
+        <text class="t-s" x="922" y="412">objects; the PI keeps,</text>
+        <text class="t-s" x="922" y="430">revises or drops it</text>
+
+        <!-- Output -->
+        <path class="flow" d="M788,310 V472" marker-end="url(#ah2)"/>
+        <path class="flow" d="M1004,440 V472" marker-end="url(#ah2)"/>
+        <rect class="out" x="690" y="476" width="412" height="96" rx="10"/>
+        <text class="t-h out-t" x="708" y="506">Novel research directions, ranked</text>
+        <text class="out-s" x="708" y="530">every one backed by quotes from the papers;</text>
+        <text class="out-s" x="708" y="548">hypotheses ranked head-to-head; minutes list</text>
+        <text class="out-s" x="708" y="566">the verdicts and what is still unresolved</text>
+      </svg>
